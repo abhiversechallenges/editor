@@ -1,0 +1,278 @@
+name: InfraVerse Unlimited Dynamic 3D Factory
+
+on:
+  push:
+    paths:
+      - "input/**"
+  workflow_dispatch:
+    inputs:
+      preview_seconds:
+        description: "0 = Full video, or 20 / 45 for quick test preview"
+        required: false
+        default: "0"
+        type: choice
+        options:
+          - "0"
+          - "20"
+          - "45"
+      quality_preset:
+        description: "1080p_30fps (YouTube HD) or 720p_24fps (Fast Draft)"
+        required: false
+        default: "1080p_30fps"
+        type: choice
+        options:
+          - "1080p_30fps"
+          - "720p_24fps"
+      force_workers:
+        description: "Parallel workers (auto = 1 for <90s, 4 for 2-5m, 6 for 6m+)"
+        required: false
+        default: "auto"
+        type: choice
+        options:
+          - "auto"
+          - "1"
+          - "4"
+          - "6"
+      trim_silence:
+        description: "Trim long pauses (>0.65s) in voiceover?"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      whisper_model:
+        description: "Whisper speech model size"
+        required: false
+        default: "small"
+        type: choice
+        options:
+          - "tiny"
+          - "base"
+          - "small"
+
+jobs:
+  plan_and_prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      has_input: ${{ steps.check_input.outputs.has_input }}
+      chunks_json: ${{ steps.chunk_plan.outputs.chunks_json }}
+      worker_count: ${{ steps.chunk_plan.outputs.worker_count }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for uploaded audio inside input/
+        id: check_input
+        run: |
+          shopt -s nullglob nocaseglob
+          files=(input/*.mp3 input/*.wav input/*.m4a input/*.aac input/*.flac input/*.ogg input/*.mp4 input/*.mov input/*.mkv input/*.webm)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "has_input=false" >> $GITHUB_OUTPUT
+            echo "No media file in input/. Skipping render."
+          else
+            echo "has_input=true" >> $GITHUB_OUTPUT
+            echo "Found media input: ${files[*]}"
+          fi
+
+      - name: Set up Python 3.11
+        if: steps.check_input.outputs.has_input == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Set up Node.js 22
+        if: steps.check_input.outputs.has_input == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install FFmpeg & Headless Chrome libraries
+        if: steps.check_input.outputs.has_input == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ffmpeg \
+            libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 \
+            libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
+            libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 \
+            libasound2t64 || sudo apt-get install -y libasound2
+
+      - name: Install Python dependencies
+        if: steps.check_input.outputs.has_input == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Node dependencies & Remotion Headless Chrome
+        if: steps.check_input.outputs.has_input == 'true'
+        run: |
+          npm install --no-audit --no-fund
+          npx remotion browser ensure
+
+      - name: Step 1 - Audio Clean & Whisper Timestamps
+        if: steps.check_input.outputs.has_input == 'true'
+        env:
+          TRIM_SILENCE: ${{ github.event.inputs.trim_silence || 'false' }}
+          WHISPER_MODEL: ${{ github.event.inputs.whisper_model || 'small' }}
+          PREVIEW_SECONDS: ${{ github.event.inputs.preview_seconds || '0' }}
+        run: |
+          python scripts/analyze_audio.py
+
+      - name: Step 2 - Gemini Unlimited Dynamic 3D Scene Coder & Self-Healer
+        if: steps.check_input.outputs.has_input == 'true'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          QUALITY_PRESET: ${{ github.event.inputs.quality_preset || '1080p_30fps' }}
+        run: |
+          python scripts/generate_scenes.py
+
+      - name: Step 3 - Validate Uniqueness, Zero Text & Zero Hard Cuts
+        if: steps.check_input.outputs.has_input == 'true'
+        run: |
+          python scripts/validate_scenes.py
+
+      - name: Step 4 - Synthesize & Duck Master Documentary Audio
+        if: steps.check_input.outputs.has_input == 'true'
+        run: |
+          python scripts/mix_audio.py
+
+      - name: Step 5 - Frame 0 Smoke Test & Bundle Project Once
+        if: steps.check_input.outputs.has_input == 'true'
+        run: |
+          npx remotion still src/index.ts Main work/frame0_smoke.png --frame=0 --gl=swangle
+          npx remotion bundle src/index.ts --public-dir public --out-dir build_bundle
+
+      - name: Step 6 - Plan Adaptive Parallel Workers (1 / 4 / 6)
+        id: chunk_plan
+        if: steps.check_input.outputs.has_input == 'true'
+        env:
+          FORCE_WORKERS: ${{ github.event.inputs.force_workers || 'auto' }}
+        run: |
+          python scripts/plan_chunks.py
+
+      - name: Upload Prepared Bundle & Master Audio
+        if: steps.check_input.outputs.has_input == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: prepared-factory
+          path: |
+            build_bundle/
+            work/master_audio.m4a
+            work/scene_plan.json
+            work/transcript.json
+            work/frame0_smoke.png
+          retention-days: 2
+
+  render_workers:
+    needs: plan_and_prepare
+    if: needs.plan_and_prepare.outputs.has_input == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: ${{ fromJson(needs.plan_and_prepare.outputs.chunks_json) }}
+
+    steps:
+      - name: Checkout repository config
+        uses: actions/checkout@v4
+
+      - name: Download Prepared Remotion Bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: prepared-factory
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Headless Chrome OS libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ffmpeg \
+            libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 \
+            libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
+            libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 \
+            libasound2t64 || sudo apt-get install -y libasound2
+
+      - name: Install Node packages & Remotion Chrome
+        run: |
+          npm install --no-audit --no-fund
+          npx remotion browser ensure
+
+      - name: Render Silent 3D Video Chunk ${{ matrix.chunk.idx }} (frames ${{ matrix.chunk.start }}-${{ matrix.chunk.end }})
+        run: |
+          mkdir -p out
+          npx remotion render build_bundle Main out/chunk_${{ matrix.chunk.idx }}.mp4 \
+            --frames=${{ matrix.chunk.start }}-${{ matrix.chunk.end }} \
+            --muted \
+            --concurrency=3 \
+            --codec=h264 \
+            --pixel-format=yuv420p \
+            --crf=22 \
+            --x264-preset=veryfast \
+            --image-format=jpeg \
+            --jpeg-quality=88 \
+            --gl=swangle
+
+      - name: Upload Rendered Chunk ${{ matrix.chunk.idx }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: chunk-${{ matrix.chunk.idx }}
+          path: out/chunk_${{ matrix.chunk.idx }}.mp4
+          retention-days: 2
+
+  stitch_final_video:
+    needs: [plan_and_prepare, render_workers]
+    if: needs.plan_and_prepare.outputs.has_input == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Stitcher Script
+        uses: actions/checkout@v4
+
+      - name: Download Prepared Audio & Metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: prepared-factory
+
+      - name: Download All Video Chunks
+        uses: actions/download-artifact@v4
+        with:
+          pattern: chunk-*
+          path: chunks
+          merge-multiple: true
+
+      - name: Set up Python & FFmpeg
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Seamlessly Join Video Chunks + Master Audio
+        run: |
+          python scripts/stitch_chunks.py
+
+      - name: Upload Final 3D Video & Logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: InfraVerse-Final-Video
+          path: |
+            out/final_video.mp4
+            work/frame0_smoke.png
+            work/scene_plan.json
+            work/transcript.json
+          retention-days: 7

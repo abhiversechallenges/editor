@@ -1,0 +1,15 @@
+node_modules/
+build_bundle/
+chunks/
+work/*
+!work/.gitkeep
+out/*
+!out/.gitkeep
+public/audio/*.mp3
+public/audio/sfx/*.mp3
+!public/audio/.gitkeep
+!public/audio/sfx/.gitkeep
+__pycache__/
+*.pyc
+.env
+.DS_Store

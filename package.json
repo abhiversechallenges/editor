@@ -1,0 +1,27 @@
+{
+  "name": "infraverse-dynamic-3d-factory",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Unlimited dynamic continuous 3D documentary factory for Public GitHub Actions",
+  "scripts": {
+    "dev": "remotion studio src/index.ts",
+    "build": "remotion bundle src/index.ts --public-dir public --out-dir build_bundle",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@react-three/drei": "9.120.4",
+    "@react-three/fiber": "8.17.10",
+    "@remotion/cli": "4.0.543",
+    "@remotion/three": "4.0.543",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.543",
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.12",
+    "@types/three": "0.170.0",
+    "typescript": "5.6.3"
+  }
+}
