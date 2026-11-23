@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """
-InfraVerse Unlimited Dynamic 3D Factory — One-Shot Builder & Git Pusher.
-Tuned for Public GitHub Repos (4 vCPU / 16 GB RAM per worker, up to 6 parallel workers).
-Features:
-  - Unlimited dynamic AI-coded Three.js scenes per video (no preset cap)
-  - Automated TypeScript self-healing compiler loop
-  - Continuous multi-stage cutaway camera flight through atmospheric fog (zero hard cuts)
-  - Zero on-screen text or captions, zero repeated visuals, continuous internal motion
-  - Sidechain-ducked documentary BGM + smooth transition swells + seamless FFmpeg stitch
+InfraVerse Unlimited Dynamic 3D Factory (v2.2).
+Two effortless folders:
+  - input/        -> Automatic 16:9 Full HD (1920x1080, 30fps) using up to 6 parallel workers
+  - input_short/  -> Automatic 9:16 Full HD Vertical (1080x1920, 30fps) matching your exact
+                     X-second custom voiceover + custom look & elements description
 """
 
 import subprocess
@@ -43,9 +40,9 @@ FILES[".gitattributes"] = r'''
 FILES["package.json"] = r'''
 {
   "name": "infraverse-dynamic-3d-factory",
-  "version": "2.0.0",
+  "version": "2.2.0",
   "private": true,
-  "description": "Unlimited dynamic continuous 3D documentary factory for Public GitHub Actions",
+  "description": "Unlimited dynamic continuous 3D documentary & custom Shorts factory",
   "scripts": {
     "dev": "remotion studio src/index.ts",
     "build": "remotion bundle src/index.ts --public-dir public --out-dir build_bundle",
@@ -109,21 +106,31 @@ Config.setPixelFormat("yuv420p");
 '''
 
 FILES["input/visuals_EXAMPLE.txt"] = r'''
-# Upload your voiceover.mp3 + a file named "visuals.txt" inside input/.
-# Describe ANY scenes, cutaways, machines, environments, or animations you want!
-# The AI will follow your flow continuously synced to your voiceover, without repeating visuals.
+# Upload your long voiceover.mp3 + visuals.txt inside input/ for a 16:9 (1920x1080) video!
+# Describe the look (colors, lighting mood) and the exact elements/cutaways you want.
 
 Example:
-- Opening: Start wide outside a massive AI data center campus under a dark sky; smoothly lift the building roof off and dive down into a glowing server rack aisle.
-- Next: Pull a single GPU supercomputer tray out into an exploded view showing copper heatpipes and 8 glowing GPU chips.
-- Next: Zoom into one silicon chip overheating fiery red with rising thermal particles, then clamp a dual-pipe cold plate onto it turning hot orange fluid into cool cyan streams.
-- Next: Follow the hot water pipes outside to cutaway hyperbolic cooling towers spinning fans and releasing gentle vapor clouds.
-- Next: Fly over to a cutaway Small Modular Nuclear Reactor core showing glowing Cherenkov blue water and oscillating control rods powering a spinning 5-stage steam turbine.
-- Next: End on a grid blackout scene where utility power flickers and a mechanical transfer switch flips over to emerald Megapack battery containers feeding the data center.
+Look & Mood: Deep obsidian dark studio with glowing cyan and warm amber highlights.
+- Opening: Start wide outside a massive AI data center campus; smoothly lift the roof off and dive into a glowing server rack aisle.
+- Next: Pull a single GPU blade out in exploded view showing copper heatpipes and 8 glowing GPU chips.
+- Next: Zoom into a silicon die overheating fiery red with rising heat plumes, then clamp a dual-loop cold plate turning hot orange fluid into cyan streams.
+- Next: Follow pipes outside to cutaway hyperbolic cooling towers spinning fans with rising vapor clouds.
+'''
+
+FILES["input_short/visuals_EXAMPLE.txt"] = r'''
+# Upload your X-second Short voiceover.mp3 + visuals.txt inside input_short/ for a 9:16 (1080x1920) Short!
+# Your FULL uploaded Short voiceover (with your custom hook) is used untouched from start to finish.
+
+Example:
+Look & Mood: High-contrast dark nuclear steel aesthetic with glowing Cherenkov blue and electric amber accents.
+- Hook (first 4s): Fast dramatic orbit around a vertical Small Modular Nuclear Reactor steel dome splitting open to reveal the glowing blue core inside.
+- Middle: Dive vertically down along oscillating uranium fuel rods and upward-streaming coolant pipes driving a spinning multi-stage turbine tower.
+- Climax & Ending: Pull out into glowing high-voltage transmission pylons feeding bright energy pulses directly into a towering AI server stack.
 '''
 
 for gitkeep_rel in (
     "input/.gitkeep",
+    "input_short/.gitkeep",
     "out/.gitkeep",
     "work/.gitkeep",
     "public/audio/.gitkeep",
@@ -249,11 +256,15 @@ from faster_whisper import WhisperModel
 from scipy.signal import find_peaks
 
 ROOT = Path(__file__).resolve().parent.parent
-INPUT_DIR = ROOT / "input"
 WORK_DIR = ROOT / "work"
 
 AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".webm"}
+
+
+def get_input_dir() -> Path:
+    folder = os.environ.get("INPUT_FOLDER", "input").strip() or "input"
+    return ROOT / folder
 
 
 def git_commit_timestamp(path: Path) -> int:
@@ -273,18 +284,18 @@ def git_commit_timestamp(path: Path) -> int:
     return int(path.stat().st_mtime)
 
 
-def find_latest_input() -> Path:
-    if not INPUT_DIR.exists():
-        raise FileNotFoundError("input/ directory does not exist.")
+def find_latest_input(input_dir: Path) -> Path:
+    if not input_dir.exists():
+        raise FileNotFoundError(f"{input_dir.name}/ directory does not exist.")
     candidates = [
         p
-        for p in INPUT_DIR.iterdir()
+        for p in input_dir.iterdir()
         if p.is_file()
         and p.name != ".gitkeep"
         and p.suffix.lower() in (AUDIO_EXTS | VIDEO_EXTS)
     ]
     if not candidates:
-        raise FileNotFoundError("No audio (.mp3/.wav) or video (.mp4) found inside input/.")
+        raise FileNotFoundError(f"No audio (.mp3/.wav) or video (.mp4) found inside {input_dir.name}/.")
     return max(candidates, key=lambda p: (git_commit_timestamp(p), p.stat().st_mtime, p.name))
 
 
@@ -292,10 +303,8 @@ def run_ffmpeg(args: List[str]) -> None:
     subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"] + args, check=True)
 
 
-def clean_and_normalize_audio(src_path: Path, trim_silence: bool, preview_sec: float) -> Dict[str, Any]:
+def clean_and_normalize_audio(src_path: Path, trim_silence: bool, preview_sec: float, out_wav: Path) -> None:
     WORK_DIR.mkdir(parents=True, exist_ok=True)
-    clean_wav = WORK_DIR / "clean_voiceover.wav"
-
     filters = ["highpass=f=80", "afftdn=nf=-25"]
     if trim_silence:
         filters.append("silenceremove=stop_periods=-1:stop_duration=0.65:stop_threshold=-42dB")
@@ -314,16 +323,9 @@ def clean_and_normalize_audio(src_path: Path, trim_silence: bool, preview_sec: f
         "1",
         "-c:a",
         "pcm_s16le",
-        str(clean_wav),
+        str(out_wav),
     ]
     run_ffmpeg(ff_args)
-
-    return {
-        "source_file": str(src_path.relative_to(ROOT)),
-        "clean_wav": str(clean_wav.relative_to(ROOT)),
-        "silence_trimmed": trim_silence,
-        "preview_seconds": preview_sec,
-    }
 
 
 def transcribe_audio(wav_path: Path) -> Dict[str, Any]:
@@ -336,7 +338,7 @@ def transcribe_audio(wav_path: Path) -> Dict[str, Any]:
         beam_size=5,
         word_timestamps=True,
         vad_filter=True,
-        vad_parameters={"min_silence_duration_ms": 450},
+        vad_parameters={"min_silence_duration_ms": 400},
         initial_prompt=(
             "AI supercluster, Nvidia GPU, NVLink, InfiniBand, liquid cooling, cold plate, "
             "data center, nuclear SMR, small modular reactor, substation, transformer, "
@@ -376,7 +378,7 @@ def analyze_beats(wav_path: Path) -> Dict[str, Any]:
     onset_norm = onset_env / (np.max(onset_env) + 1e-8)
     combined = 0.65 * rms_norm + 0.35 * onset_norm
 
-    min_distance = int((3.0 * sr) / hop_length)
+    min_distance = int((2.2 * sr) / hop_length)
     peaks, _ = find_peaks(
         combined,
         height=float(np.percentile(combined, 70)),
@@ -398,19 +400,30 @@ def analyze_beats(wav_path: Path) -> Dict[str, Any]:
 
 
 def main() -> None:
-    src = find_latest_input()
+    input_dir = get_input_dir()
+    src = find_latest_input(input_dir)
     trim_silence = os.environ.get("TRIM_SILENCE", "false").lower() == "true"
     preview_sec = float(os.environ.get("PREVIEW_SECONDS", "0") or "0")
 
-    print(f"[analyze_audio] Selected latest input: {src}")
-    meta = clean_and_normalize_audio(src, trim_silence=trim_silence, preview_sec=preview_sec)
-    (WORK_DIR / "input_meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
-
+    print(f"[analyze_audio] Selected input from {input_dir.name}/: {src.name}")
     clean_wav = WORK_DIR / "clean_voiceover.wav"
+    clean_and_normalize_audio(src, trim_silence=trim_silence, preview_sec=preview_sec, out_wav=clean_wav)
+
     transcript = transcribe_audio(clean_wav)
     beats = analyze_beats(clean_wav)
     transcript["duration_sec"] = beats["duration_sec"]
 
+    (WORK_DIR / "input_meta.json").write_text(
+        json.dumps(
+            {
+                "input_folder": input_dir.name,
+                "source_file": str(src.relative_to(ROOT)),
+                "duration_sec": beats["duration_sec"],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     (WORK_DIR / "transcript.json").write_text(
         json.dumps(transcript, indent=2, ensure_ascii=False), encoding="utf-8"
     )
@@ -436,7 +449,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gemini_helper import clean_tsx_text, generate_with_fallback, get_client, parse_json_strict
 
 ROOT = Path(__file__).resolve().parent.parent
-INPUT_DIR = ROOT / "input"
 WORK_DIR = ROOT / "work"
 MODELS_DIR = ROOT / "public" / "models"
 GENERATED_DIR = ROOT / "src" / "generated"
@@ -453,7 +465,6 @@ import type { DynamicSceneProps } from "../../types";
 
 Props Reference (type V3 = [number, number, number]):
 - DynamicSceneProps: { frame: number; localFrame: number; progress: number; accentHex: string }
-  (`progress` goes smoothly from 0.0 to 1.0 over this scene's active duration!)
 - MatteBox: { pos?: V3; rot?: V3; size?: V3; color?: string; emissive?: string; emissiveIntensity?: number; roughness?: number; metalness?: number; opacity?: number }
 - MatteCylinder: { pos?: V3; rot?: V3; radiusTop?: number; radiusBottom?: number; height?: number; segments?: number; openEnded?: boolean; thetaStart?: number; thetaLength?: number; doubleSide?: boolean; color?: string; emissive?: string; emissiveIntensity?: number }
 - MatteSphere: { pos?: V3; scale?: V3; radius?: number; color?: string; emissive?: string; emissiveIntensity?: number }
@@ -462,20 +473,16 @@ Props Reference (type V3 = [number, number, number]):
 - SpinGroup: { pos?: V3; rot?: V3; axis?: "x"|"y"|"z"; speed?: number; frame: number; children?: React.ReactNode }
 - BobGroup: { pos?: V3; rot?: V3; axis?: "x"|"y"|"z"; amp?: number; speed?: number; phase?: number; frame: number; children?: React.ReactNode }
 - RevealSlideGroup: { startPos?: V3; endPos?: V3; startScale?: number; endScale?: number; progress: number; startAt?: number; endAt?: number; children?: React.ReactNode }
-  (Use RevealSlideGroup to smoothly lift roofs, slide cutaway walls open, or explode layered assemblies apart as progress moves from startAt to endAt!)
 - FlowStream: { points: V3[]; tubeRadius?: number; tubeColor?: string; particleColor?: string; particleSize?: number; count?: number; speed?: number; frame: number }
-  (points MUST have >= 2 V3 coordinates! Streams glowing spheres along a smooth 3D tube.)
 - RisingParticles: { origin?: V3; spread?: number; height?: number; count?: number; size?: number; color?: string; speed?: number; frame: number }
 - OrbitRing: { center?: V3; radius?: number; count?: number; size?: number; color?: string; speed?: number; tilt?: V3; frame: number }
 - GlbModel: { file: string; pos?: V3; rot?: V3; scale?: number; spinSpeed?: number; frame: number }
 
-STRICT CODE RULES FOR GENERATED SCENE COMPONENTS:
-1. Export EXACTLY `export const Scene_XX: React.FC<DynamicSceneProps> = ({ frame, localFrame, progress, accentHex }) => { ... }` (where XX matches the assigned ID).
-2. NEVER import `three`, `@react-three/fiber`, `remotion`, `useFrame`, `useState`, `useEffect`, or `<Text>` / `<Html>`. Use ONLY `React`, `StudioKit`, `DynamicSceneProps`, and standard `<group>` JSX tags!
-3. Keep all geometry comfortably inside radius `[-3.8 .. +3.8]` in X/Z and `[-2.0 .. +2.8]` in Y around `[0, 0, 0]`.
-4. EVERY scene MUST have continuous motion (using `SpinGroup`, `BobGroup`, `FlowStream`, `RisingParticles`, `OrbitRing`, and `RevealSlideGroup` with `progress`).
-5. Use clean stylized matte colors (#1E293B, #334155, #475569, #CBD5E1, #E2E8F0, #D97706, #064E3B) paired with glowing emissive accents (`accentHex`, `#F97316`, `#22D3EE`, `#10B981`, `#38BDF8`, `#F59E0B`).
-6. ZERO text, zero labels, zero HTML overlays.
+STRICT CODE RULES:
+1. Export EXACTLY `export const Scene_XX: React.FC<DynamicSceneProps> = ({ frame, localFrame, progress, accentHex }) => { ... }`.
+2. NEVER import `three`, `@react-three/fiber`, `remotion`, `useFrame`, `useState`, `useEffect`, or `<Text>` / `<Html>`. Use ONLY `React`, `StudioKit`, `DynamicSceneProps`, and standard `<group>`.
+3. EVERY scene MUST have continuous internal motion + cutaway animation (`RevealSlideGroup`, `SpinGroup`, `FlowStream`, `RisingParticles`, `BobGroup`).
+4. ZERO text, zero labels, zero HTML overlays.
 """
 
 PALETTES = [
@@ -489,7 +496,7 @@ PALETTES = [
     {"bgHex": "#100D22", "accentHex": "#818CF8"},
 ]
 
-DEFAULT_WAYPOINTS = [
+DEFAULT_WAYPOINTS_16_9 = [
     [
         {"offset": [5.6, 3.0, 6.0], "lookOffset": [0.0, 0.2, 0.0]},
         {"offset": [1.8, 1.5, 4.1], "lookOffset": [0.1, 0.1, 0.0]},
@@ -500,10 +507,18 @@ DEFAULT_WAYPOINTS = [
         {"offset": [-1.2, 1.3, 3.6], "lookOffset": [0.0, 0.2, 0.0]},
         {"offset": [3.5, 1.9, 4.4], "lookOffset": [0.1, 0.0, 0.0]},
     ],
+]
+
+DEFAULT_WAYPOINTS_9_16 = [
     [
-        {"offset": [0.5, 4.4, 6.4], "lookOffset": [0.0, 0.0, 0.0]},
-        {"offset": [3.1, 1.7, 4.0], "lookOffset": [0.0, 0.2, 0.0]},
-        {"offset": [-2.4, 1.2, 3.7], "lookOffset": [0.0, 0.1, 0.0]},
+        {"offset": [4.4, 3.2, 6.4], "lookOffset": [0.0, 0.3, 0.0]},
+        {"offset": [1.2, 1.6, 4.6], "lookOffset": [0.0, 0.2, 0.0]},
+        {"offset": [-2.8, 2.2, 5.2], "lookOffset": [0.0, 0.1, 0.0]},
+    ],
+    [
+        {"offset": [-4.2, 2.8, 6.2], "lookOffset": [0.0, 0.2, 0.0]},
+        {"offset": [-0.8, 1.4, 4.4], "lookOffset": [0.0, 0.3, 0.0]},
+        {"offset": [2.9, 2.1, 5.1], "lookOffset": [0.0, 0.1, 0.0]},
     ],
 ]
 
@@ -521,12 +536,17 @@ FORBIDDEN_CODE_PATTERNS = (
 )
 
 
-def load_visuals_prompt() -> str:
-    if not INPUT_DIR.exists():
+def get_input_dir() -> Path:
+    folder = os.environ.get("INPUT_FOLDER", "input").strip() or "input"
+    return ROOT / folder
+
+
+def load_visuals_prompt(input_dir: Path) -> str:
+    if not input_dir.exists():
         return ""
     candidates = [
         p
-        for p in INPUT_DIR.iterdir()
+        for p in input_dir.iterdir()
         if p.is_file() and p.suffix.lower() == ".txt" and p.name != "visuals_EXAMPLE.txt"
     ]
     if not candidates:
@@ -555,7 +575,15 @@ def discover_custom_models() -> List[str]:
     return sorted(p.name for p in MODELS_DIR.iterdir() if p.is_file() and p.suffix.lower() in {".glb", ".gltf"})
 
 
-def compute_scene_range(duration_sec: float) -> tuple[int, int]:
+def compute_scene_range(duration_sec: float, is_short: bool) -> tuple[int, int]:
+    if is_short:
+        if duration_sec <= 20:
+            return 3, 4
+        if duration_sec <= 38:
+            return 4, 6
+        if duration_sec <= 65:
+            return 6, 9
+        return 8, 12
     if duration_sec <= 25:
         return 2, 3
     if duration_sec <= 60:
@@ -589,46 +617,46 @@ def build_safe_fallback_scene_tsx(scene_num: int, accent_hex: str, title: str) -
     safe_comment = re.sub(r"[^A-Za-z0-9 ,.-]", "", title)[:60]
     if variant == 0:
         body = f"""
-      <MatteBox pos={{[0, -0.8, 0]}} size={{[4.8, 0.2, 3.6]}} color="#141E2E" />
-      <RevealSlideGroup startPos={{[0, 0, 0]}} endPos={{[0, 1.35, 0]}} progress={{progress}} startAt={{0.2}} endAt={{0.65}}>
-        <MatteBox pos={{[0, 0.3, 0]}} size={{[3.2, 0.35, 2.2]}} color="#334155" />
+      <MatteBox pos={{[0, -0.8, 0]}} size={{[4.2, 0.2, 3.4]}} color="#141E2E" />
+      <RevealSlideGroup startPos={{[0, 0, 0]}} endPos={{[0, 1.45, 0]}} progress={{progress}} startAt={{0.2}} endAt={{0.65}}>
+        <MatteBox pos={{[0, 0.3, 0]}} size={{[2.8, 0.35, 2.0]}} color="#334155" />
       </RevealSlideGroup>
-      <SpinGroup pos={{[0, -0.1, 0]}} axis="y" speed={{0.8}} frame={{frame}}>
-        <MatteCylinder pos={{[0, 0, 0]}} radiusTop={{0.75}} radiusBottom={{0.95}} height={{1.1}} color="#1E293B" />
-        <MatteCylinder pos={{[0, 0.1, 0]}} radiusTop={{0.45}} radiusBottom={{0.45}} height={{1.2}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.6}} />
+      <SpinGroup pos={{[0, -0.1, 0]}} axis="y" speed={{0.9}} frame={{frame}}>
+        <MatteCylinder pos={{[0, 0, 0]}} radiusTop={{0.7}} radiusBottom={{0.9}} height={{1.2}} color="#1E293B" />
+        <MatteCylinder pos={{[0, 0.1, 0]}} radiusTop={{0.42}} radiusBottom={{0.42}} height={{1.3}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.6}} />
       </SpinGroup>
-      <FlowStream points={{[[-2.4, 0.2, -1.0], [-0.9, 0.4, -0.2], [0.9, 0.4, 0.2], [2.4, 0.2, 1.0]]}} tubeColor="#1E293B" particleColor={{"{accent_hex}"}} count={{6}} speed={{0.65}} frame={{frame}} />"""
+      <FlowStream points={{[[-2.0, 0.2, -0.8], [-0.7, 0.4, -0.2], [0.7, 0.4, 0.2], [2.0, 0.2, 0.8]]}} tubeColor="#1E293B" particleColor={{"{accent_hex}"}} count={{6}} speed={{0.7}} frame={{frame}} />"""
     elif variant == 1:
         body = f"""
-      <MatteBox pos={{[0, -0.9, 0]}} size={{[5.2, 0.18, 3.4]}} color="#0F172A" />
-      <BobGroup pos={{[0, 0.1, 0]}} axis="y" amp={{0.14}} speed={{1.4}} frame={{frame}}>
-        <MatteTorus pos={{[0, 0, 0]}} radius={{1.25}} tube={{0.16}} color="#334155" />
-        <MatteTorus pos={{[0, 0, 0]}} rot={{[1.57, 0, 0]}} radius={{0.95}} tube={{0.09}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.7}} />
+      <MatteBox pos={{[0, -0.9, 0]}} size={{[4.0, 0.18, 3.2]}} color="#0F172A" />
+      <BobGroup pos={{[0, 0.2, 0]}} axis="y" amp={{0.15}} speed={{1.5}} frame={{frame}}>
+        <MatteTorus pos={{[0, 0, 0]}} radius={{1.15}} tube={{0.15}} color="#334155" />
+        <MatteTorus pos={{[0, 0, 0]}} rot={{[1.57, 0, 0]}} radius={{0.88}} tube={{0.09}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.7}} />
       </BobGroup>
-      <OrbitRing center={{[0, 0.1, 0]}} radius={{1.9}} count={{8}} size={{0.11}} color={{"{accent_hex}"}} speed={{0.9}} frame={{frame}} />
-      <RisingParticles origin={{[0, -0.7, 0]}} spread={{1.2}} height={{2.4}} count={{12}} color={{"{accent_hex}"}} frame={{frame}} />"""
+      <OrbitRing center={{[0, 0.2, 0]}} radius={{1.65}} count={{8}} size={{0.1}} color={{"{accent_hex}"}} speed={{0.9}} frame={{frame}} />
+      <RisingParticles origin={{[0, -0.7, 0]}} spread={{1.0}} height={{2.5}} count={{12}} color={{"{accent_hex}"}} frame={{frame}} />"""
     elif variant == 2:
         body = f"""
-      <MatteBox pos={{[0, -0.85, 0]}} size={{[4.6, 0.2, 4.6]}} color="#182234" />
-      <RevealSlideGroup startPos={{[0, 0, 0]}} endPos={{[1.2, 0.8, 0]}} progress={{progress}} startAt={{0.15}} endAt={{0.6}}>
-        <MatteCylinder pos={{[0, 0.1, 0]}} radiusTop={{1.1}} radiusBottom={{1.1}} height={{1.8}} thetaLength={{4.2}} doubleSide={{true}} color="#475569" />
+      <MatteBox pos={{[0, -0.85, 0]}} size={{[3.8, 0.2, 3.8]}} color="#182234" />
+      <RevealSlideGroup startPos={{[0, 0, 0]}} endPos={{[1.0, 0.9, 0]}} progress={{progress}} startAt={{0.15}} endAt={{0.6}}>
+        <MatteCylinder pos={{[0, 0.2, 0]}} radiusTop={{1.0}} radiusBottom={{1.0}} height={{1.9}} thetaLength={{4.2}} doubleSide={{true}} color="#475569" />
       </RevealSlideGroup>
-      <SpinGroup pos={{[0, 0.1, 0]}} axis="y" speed={{1.8}} frame={{frame}}>
-        <MatteBox pos={{[0, 0, 0]}} size={{[1.6, 0.22, 0.3]}} color="#CBD5E1" />
-        <MatteBox pos={{[0, 0, 0]}} size={{[0.3, 0.22, 1.6]}} color="#CBD5E1" />
-        <MatteSphere pos={{[0, 0.4, 0]}} radius={{0.38}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.9}} />
+      <SpinGroup pos={{[0, 0.2, 0]}} axis="y" speed={{1.8}} frame={{frame}}>
+        <MatteBox pos={{[0, 0, 0]}} size={{[1.45, 0.22, 0.28]}} color="#CBD5E1" />
+        <MatteBox pos={{[0, 0, 0]}} size={{[0.28, 0.22, 1.45]}} color="#CBD5E1" />
+        <MatteSphere pos={{[0, 0.45, 0]}} radius={{0.36}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.9}} />
       </SpinGroup>"""
     else:
         body = f"""
-      <MatteBox pos={{[0, -0.85, 0]}} size={{[5.4, 0.2, 3.2]}} color="#141C2B" />
-      <FlowStream points={{[[-2.5, 0.9, 0], [-1.1, 0.1, 0.4], [1.1, 0.1, -0.4], [2.5, 0.9, 0]]}} tubeColor="#334155" particleColor={{"{accent_hex}"}} count={{7}} speed={{0.8}} frame={{frame}} />
-      <BobGroup pos={{[-1.6, 0.0, 0]}} axis="y" amp={{0.18}} speed={{1.6}} frame={{frame}}>
-        <MatteBox size={{[0.9, 1.3, 0.9]}} color="#243146" />
+      <MatteBox pos={{[0, -0.85, 0]}} size={{[4.4, 0.2, 3.0]}} color="#141C2B" />
+      <FlowStream points={{[[-2.0, 0.9, 0], [-0.9, 0.1, 0.3], [0.9, 0.1, -0.3], [2.0, 0.9, 0]]}} tubeColor="#334155" particleColor={{"{accent_hex}"}} count={{7}} speed={{0.85}} frame={{frame}} />
+      <BobGroup pos={{[-1.3, 0.0, 0]}} axis="y" amp={{0.18}} speed={{1.6}} frame={{frame}}>
+        <MatteBox size={{[0.8, 1.35, 0.8]}} color="#243146" />
       </BobGroup>
-      <BobGroup pos={{[1.6, 0.0, 0]}} axis="y" amp={{0.18}} speed={{1.6}} phase={{1.5}} frame={{frame}}>
-        <MatteBox size={{[0.9, 1.3, 0.9]}} color="#243146" />
+      <BobGroup pos={{[1.3, 0.0, 0]}} axis="y" amp={{0.18}} speed={{1.6}} phase={{1.5}} frame={{frame}}>
+        <MatteBox size={{[0.8, 1.35, 0.8]}} color="#243146" />
       </BobGroup>
-      <MatteCylinder pos={{[0, 0.0, 0]}} radiusTop={{0.45}} radiusBottom={{0.55}} height={{1.5}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.4}} />"""
+      <MatteCylinder pos={{[0, 0.1, 0]}} radiusTop={{0.42}} radiusBottom={{0.52}} height={{1.6}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.4}} />"""
 
     return f"""import React from "react";
 import {{
@@ -648,10 +676,6 @@ export const Scene_{scene_num:02d}: React.FC<DynamicSceneProps> = ({{ frame, pro
 
 
 def extract_scenes_dict(raw_text: str) -> Dict[str, str]:
-    """
-    Expect Gemini to return JSON mapping scene keys ("Scene_01", ...) to TSX strings,
-    or fall back to splitting `// === SCENE_XX ===` blocks if returned as raw TSX.
-    """
     cleaned = clean_tsx_text(raw_text)
     try:
         parsed = json.loads(cleaned)
@@ -689,6 +713,7 @@ def normalize_storyboard(
     fps: int,
     width: int,
     height: int,
+    is_short: bool,
 ) -> Dict[str, Any]:
     raw_scenes = raw_board.get("scenes") or []
     if not raw_scenes:
@@ -698,6 +723,7 @@ def normalize_storyboard(
     avg_len = duration_sec / count
     cursor = 0.0
     scenes: List[Dict[str, Any]] = []
+    wp_bank = DEFAULT_WAYPOINTS_9_16 if is_short else DEFAULT_WAYPOINTS_16_9
 
     for idx, sc in enumerate(raw_scenes):
         is_last = idx == count - 1
@@ -706,10 +732,11 @@ def normalize_storyboard(
             end_sec = round(duration_sec, 3)
         else:
             raw_end = float(sc.get("endSec", (idx + 1) * avg_len))
-            min_end = start_sec + max(4.5, avg_len * 0.5)
-            max_end = duration_sec - (count - idx - 1) * 4.5
+            min_gap = 3.2 if is_short else 4.5
+            min_end = start_sec + max(min_gap, avg_len * 0.5)
+            max_end = duration_sec - (count - idx - 1) * min_gap
             clamped = min(max(raw_end, min_end), max(min_end, max_end))
-            end_sec = snap_to_peak(clamped, peaks, start_sec + 4.0, duration_sec - 4.0)
+            end_sec = snap_to_peak(clamped, peaks, start_sec + min_gap - 0.5, duration_sec - min_gap)
         cursor = end_sec
 
         pal = PALETTES[idx % len(PALETTES)]
@@ -717,7 +744,7 @@ def normalize_storyboard(
         accent_hex = sanitize_hex(sc.get("accentHex"), pal["accentHex"])
 
         wps = sc.get("cameraWaypoints")
-        default_wps = DEFAULT_WAYPOINTS[idx % len(DEFAULT_WAYPOINTS)]
+        default_wps = wp_bank[idx % len(wp_bank)]
         clean_wps = []
         if isinstance(wps, list) and len(wps) >= 2:
             for wi, wp in enumerate(wps[:4]):
@@ -730,14 +757,13 @@ def normalize_storyboard(
                     look = dwp["lookOffset"]
                 clean_wps.append(
                     {
-                        "offset": [round(min(8.0, max(-8.0, float(x))), 3) for x in off],
+                        "offset": [round(min(8.5, max(-8.5, float(x))), 3) for x in off],
                         "lookOffset": [round(min(1.5, max(-1.5, float(x))), 3) for x in look],
                     }
                 )
         else:
             clean_wps = default_wps
 
-        # Spaced >= 31.3 units apart along a smooth winding path so fog hides adjacent scenes seamlessly
         world_pos = [
             round(idx * 28.0, 2),
             round(2.6 if idx % 2 == 1 else 0.0, 2),
@@ -749,7 +775,7 @@ def normalize_storyboard(
                 "id": f"scene_{idx + 1:02d}",
                 "componentName": f"Scene_{idx + 1:02d}",
                 "visualConcept": str(sc.get("visualConcept") or f"Unique Engineering Concept {idx + 1}")[:120],
-                "visualSpec": str(sc.get("visualSpec") or "Animated multi-part stylized 3D cutaway mechanism with continuous glowing energy flow.")[:500],
+                "visualSpec": str(sc.get("visualSpec") or "Animated multi-part stylized 3D cutaway mechanism.")[:500],
                 "startSec": start_sec,
                 "endSec": end_sec,
                 "worldPos": world_pos,
@@ -834,7 +860,7 @@ def self_heal_scenes(client: Any, plan: Dict[str, Any]) -> None:
     for attempt in range(1, 3):
         res = run_tsc_check()
         if res.returncode == 0:
-            print(f"[self_heal] TypeScript compiled cleanly with 0 errors!")
+            print("[self_heal] TypeScript compiled cleanly with 0 errors!")
             return
 
         output = (res.stdout or "") + "\n" + (res.stderr or "")
@@ -849,28 +875,26 @@ def self_heal_scenes(client: Any, plan: Dict[str, Any]) -> None:
             broken_code = sc_path.read_text(encoding="utf-8") if sc_path.exists() else ""
             err_lines = [ln for ln in output.splitlines() if cname in ln][:8]
             fix_prompt = f"""
-Fix the TypeScript errors in this single Remotion Three.js scene file `{cname}.tsx`.
+Fix the TypeScript errors in `{cname}.tsx`.
 
 {STUDIO_KIT_API_DOC}
 
-COMPILER ERRORS:
+ERRORS:
 {chr(10).join(err_lines)}
 
-CURRENT CODE:
+CODE:
 {broken_code}
 
-Return ONLY the fixed complete TypeScript TSX file for `{cname}.tsx`.
+Return ONLY the fixed complete TSX file.
 """
             try:
                 fixed_raw = generate_with_fallback(client, fix_prompt, role="flash", json_mode=False, temperature=0.2)
                 scene_num = int(cname.split("_")[1])
-                fixed_code = sanitize_scene_tsx(fixed_raw, scene_num)
-                sc_path.write_text(fixed_code, encoding="utf-8")
+                sc_path.write_text(sanitize_scene_tsx(fixed_raw, scene_num), encoding="utf-8")
             except Exception as exc:
-                print(f"[self_heal] Repair call failed for {cname} ({exc}); will fallback if needed.")
+                print(f"[self_heal] Repair skipped for {cname} ({exc}).")
             time.sleep(3)
 
-    # Final check: swap ONLY stubbornly broken files to unique procedural fallback
     final_res = run_tsc_check()
     if final_res.returncode != 0:
         final_out = (final_res.stdout or "") + "\n" + (final_res.stderr or "")
@@ -885,8 +909,7 @@ Return ONLY the fixed complete TypeScript TSX file for `{cname}.tsx`.
             )
         verify = run_tsc_check()
         if verify.returncode != 0:
-            raise RuntimeError(f"TypeScript still failed after fallbacks:\n{verify.stdout}\n{verify.stderr}")
-        print("[self_heal] Fallback recovery succeeded. 0 TypeScript errors.")
+            raise RuntimeError(f"TypeScript failed after fallbacks:\n{verify.stdout}\n{verify.stderr}")
 
 
 def main() -> None:
@@ -896,23 +919,38 @@ def main() -> None:
     bpm = float(beats["bpm"])
     peaks = list(beats["emphasis_peaks"])
 
-    quality = os.environ.get("QUALITY_PRESET", "1080p_30fps")
-    if quality == "720p_24fps":
+    video_format = os.environ.get("VIDEO_FORMAT", "long_16_9").strip()
+    quality = os.environ.get("QUALITY_PRESET", "1080p_30fps").strip()
+    is_short = video_format == "short_9_16"
+
+    if is_short:
+        width, height, fps = 1080, 1920, 30
+    elif quality == "720p_24fps":
         width, height, fps = 1280, 720, 24
     else:
         width, height, fps = 1920, 1080, 30
 
-    visuals_prompt = load_visuals_prompt()
+    input_dir = get_input_dir()
+    visuals_prompt = load_visuals_prompt(input_dir)
     custom_models = discover_custom_models()
-    min_sc, max_sc = compute_scene_range(duration_sec)
+    min_sc, max_sc = compute_scene_range(duration_sec, is_short=is_short)
+
+    framing_note = (
+        "VERTICAL 9:16 YOUTUBE SHORT MODE (1080x1920): Keep X spread tight [-2.2 .. +2.2] and build TALL vertical stacked machinery/towers [-2.2 .. +2.8 in Y] so every visual element fills a vertical phone screen! Use punchy pacing synced tightly to the user's hook and voiceover."
+        if is_short
+        else "WIDESCREEN 16:9 MODE (1920x1080): Keep geometry spread within [-3.8 .. +3.8] X/Z and [-2.0 .. +2.8] Y."
+    )
 
     storyboard_prompt = f"""
-You are the Lead 3D Film Director for a stylized matte-3D engineering documentary channel (like Professor Of How / Zack D. Films mechanical cutaways, ZERO text on screen).
+You are the Lead 3D Film Director for a stylized matte-3D engineering channel (like Professor Of How / Zack D. Films mechanical cutaways, ZERO text on screen).
 
-USER VISUAL DESCRIPTION (Follow every visual idea, order, and object requested here):
-{visuals_prompt if visuals_prompt else "(No visuals.txt uploaded — invent vivid, completely unique engineering & infrastructure 3D scenes matching every chapter of the voiceover!)"}
+ASPECT & FRAMING:
+{framing_note}
 
-AVAILABLE CUSTOM .GLB MODELS IN public/models/:
+USER'S LOOK, STYLE & ELEMENTS DESCRIPTION (Follow EVERY visual style, color look, mood, and element requested by the user!):
+{visuals_prompt if visuals_prompt else "(No visuals.txt uploaded — invent vivid, completely unique engineering & infrastructure 3D scenes matching the voiceover!)"}
+
+CUSTOM .GLB MODELS IN public/models/:
 {json.dumps(custom_models)}
 
 VOICEOVER TRANSCRIPT ({duration_sec:.2f}s):
@@ -921,26 +959,26 @@ VOICEOVER TRANSCRIPT ({duration_sec:.2f}s):
 VOCAL EMPHASIS PEAKS (seconds):
 {json.dumps(peaks[:120])}
 
-HARD STORYBOARD RULES:
-1. Divide the {duration_sec:.2f}s narration naturally into {min_sc} to {max_sc} continuous chapters (scenes) based on topic shifts (varying naturally e.g. 6s–24s; do NOT make robotic equal lengths!).
-2. ZERO REPETITION: Every single chapter MUST depict a completely DIFFERENT visualConcept, layout, and hero objects! Never repeat the same visual twice.
-3. MULTI-STAGE CONTINUOUS MOTION: Describe cutaway actions inside `visualSpec` (e.g., outer roof lifting up, walls sliding open, exploded layers rising, glowing particles flowing through pipes, spinning turbines, pulsing grids, or custom `.glb` models if listed above).
-4. CAMERA FLIGHT: Give 3 smooth `cameraWaypoints` per scene (`offset`: [x, y, z] within radius 3.4..7.2 and height 0.7..4.6; `lookOffset`: [lx, ly, lz] within -0.5..0.5) transitioning smoothly from wide view to close-up cutaway.
-5. COHESIVE DARK STUDIO COLORS: Pick deep dark `bgHex` (#08101E, #140D12, #07181E, #071915, #141009, #100D22) and vivid `accentHex`.
+HARD RULES:
+1. Build the FULL {duration_sec:.2f}s video into {min_sc} to {max_sc} continuous chapters ("scenes") matching the narration and the user's requested hook/elements/look.
+2. ZERO REPETITION: Every chapter MUST have a completely DIFFERENT `visualConcept`, layout, and hero objects!
+3. CONTINUOUS CUTAWAY MOTION: Describe moving parts & `RevealSlideGroup` cutaways in `visualSpec`.
+4. CAMERA FLIGHT: 3 smooth `cameraWaypoints` per scene (`offset`: [x,y,z], `lookOffset`: [lx,ly,lz]).
+5. HONOR USER LOOK & COLORS: Choose `bgHex` and `accentHex` matching the exact look/mood requested in the user's description (or cohesive dark studio hues if unspecified).
 
 Return ONLY valid JSON:
 {{
   "scenes": [
     {{
       "visualConcept": "Short unique concept summary",
-      "visualSpec": "Detailed 3D composition: base slab, cutaway shell opening at progress 0.2->0.6, spinning internal rotors, glowing flow pipes, rising thermal orbs, etc.",
-      "endSec": 14.5,
+      "visualSpec": "Detailed 3D composition & cutaway motions matching user elements",
+      "endSec": 6.5,
       "bgHex": "#08101E",
       "accentHex": "#22D3EE",
       "cameraWaypoints": [
-        {{"offset": [5.8, 3.1, 6.2], "lookOffset": [0.0, 0.2, 0.0]}},
-        {{"offset": [1.6, 1.5, 4.0], "lookOffset": [0.1, 0.1, 0.0]}},
-        {{"offset": [-3.4, 2.0, 4.4], "lookOffset": [-0.1, 0.0, 0.0]}}
+        {{"offset": [4.6, 3.0, 6.2], "lookOffset": [0.0, 0.2, 0.0]}},
+        {{"offset": [1.4, 1.5, 4.4], "lookOffset": [0.0, 0.2, 0.0]}},
+        {{"offset": [-2.8, 2.1, 4.9], "lookOffset": [0.0, 0.0, 0.0]}}
       ]
     }}
   ]
@@ -948,7 +986,7 @@ Return ONLY valid JSON:
 """
 
     client = get_client()
-    print("[generate_scenes] Step 1/2: Planning unique continuous storyboard with Gemini Pro...")
+    print(f"[generate_scenes] Planning storyboard from {input_dir.name}/ ({width}x{height} @ {fps}fps)...")
     raw_board = generate_with_fallback(client, storyboard_prompt, role="pro", json_mode=True, temperature=0.45)
     plan = normalize_storyboard(
         parse_json_strict(raw_board),
@@ -958,17 +996,17 @@ Return ONLY valid JSON:
         fps=fps,
         width=width,
         height=height,
+        is_short=is_short,
     )
     (WORK_DIR / "scene_plan.json").write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    # Clear previous dynamically generated scenes
     SCENES_DIR.mkdir(parents=True, exist_ok=True)
     for old_file in SCENES_DIR.glob("Scene_*.tsx"):
         old_file.unlink()
 
     scenes = plan["scenes"]
     batch_size = 4
-    print(f"[generate_scenes] Step 2/2: Coding {len(scenes)} unique 3D scenes in batches of {batch_size}...")
+    print(f"[generate_scenes] Coding {len(scenes)} unique 3D scenes in batches of {batch_size}...")
 
     for b_start in range(0, len(scenes), batch_size):
         batch = scenes[b_start : b_start + batch_size]
@@ -984,14 +1022,14 @@ Return ONLY valid JSON:
         ]
         code_prompt = f"""
 You are an Expert Three.js / React Three Fiber 3D Technical Animator.
-Build rich, multi-part, stylized matte-3D cutaway scenes for the batch below.
-
+{framing_note}
+USER LOOK GUIDANCE: {visuals_prompt[:1000] if visuals_prompt else "Sleek stylized matte-3D engineering studio."}
 {STUDIO_KIT_API_DOC}
 
 BATCH TO CODE (Make every scene visually distinct, richly detailed with 8–18 components each, with cutaway RevealSlideGroup + continuous SpinGroup/BobGroup/FlowStream/RisingParticles motion!):
 {json.dumps(batch_specs, indent=2)}
 
-Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_01") and each value is the complete valid TypeScript TSX file string starting with `import React from "react";`.
+Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_01") and each value is the complete valid TSX file string starting with `import React from "react";`.
 """
         try:
             raw_code_json = generate_with_fallback(
@@ -1004,7 +1042,7 @@ Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_
             )
             generated_map = extract_scenes_dict(raw_code_json)
         except Exception as exc:
-            print(f"[generate_scenes] Batch {b_start+1} API failed ({exc}); using safe fallbacks for batch.")
+            print(f"[generate_scenes] Batch {b_start+1} API failed ({exc}); using safe fallbacks.")
             generated_map = {}
 
         for sc in batch:
@@ -1015,11 +1053,10 @@ Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_
             try:
                 if not raw_tsx.strip():
                     raise ValueError(f"Empty code returned for {cname}")
-                clean_code = sanitize_scene_tsx(raw_tsx, num)
-                out_path.write_text(clean_code, encoding="utf-8")
+                out_path.write_text(sanitize_scene_tsx(raw_tsx, num), encoding="utf-8")
                 print(f"  + Generated custom {cname}.tsx ({sc['visualConcept'][:48]})")
             except Exception as exc:
-                print(f"  ! {cname} sanitize issue ({exc}); writing unique procedural fallback.")
+                print(f"  ! {cname} sanitize issue ({exc}); writing unique fallback.")
                 out_path.write_text(
                     build_safe_fallback_scene_tsx(num, sc["accentHex"], sc["visualConcept"]),
                     encoding="utf-8",
@@ -1039,7 +1076,6 @@ if __name__ == "__main__":
 
 FILES["scripts/validate_scenes.py"] = r'''
 import json
-import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -1067,9 +1103,8 @@ def audit_plan(plan: Dict[str, Any]) -> List[str]:
         if idx > 0 and abs(float(sc["startSec"]) - float(scenes[idx - 1]["endSec"])) > 0.01:
             errors.append(f"Timeline discontinuity between {scenes[idx-1]['id']} and {sc['id']}.")
 
-        wps = sc.get("cameraWaypoints") or []
-        if len(wps) < 2:
-            errors.append(f"{sc['id']} has fewer than 2 cameraWaypoints (risk of static frame).")
+        if len(sc.get("cameraWaypoints") or []) < 2:
+            errors.append(f"{sc['id']} has fewer than 2 cameraWaypoints.")
 
         cname = sc.get("componentName")
         if not (SCENES_DIR / f"{cname}.tsx").exists():
@@ -1098,7 +1133,7 @@ def main() -> None:
     errs = audit_plan(plan) + audit_source_files()
     if errs:
         raise SystemExit("[validate_scenes] FAILED:\n - " + "\n - ".join(errs))
-    print(f"[validate_scenes] PASSED: {len(plan['scenes'])} unique continuous dynamic scenes, zero text, zero hard cuts.")
+    print(f"[validate_scenes] PASSED: {len(plan['scenes'])} unique continuous dynamic scenes.")
 
 
 if __name__ == "__main__":
@@ -1163,12 +1198,10 @@ def synthesize_documentary_bgm(n_samples: int, bpm: float) -> np.ndarray:
     left = lowpass(left + pulse, 920.0)
     right = lowpass(right + pulse, 920.0)
     stereo = np.column_stack([left, right])
-    peak = float(np.max(np.abs(stereo))) + 1e-9
-    stereo = stereo / peak
+    stereo = stereo / (float(np.max(np.abs(stereo))) + 1e-9)
 
-    # 2s fade-in and 3s fade-out
-    fade_in = min(n_samples, int(2.0 * SAMPLE_RATE))
-    fade_out = min(n_samples, int(3.0 * SAMPLE_RATE))
+    fade_in = min(n_samples, int(1.5 * SAMPLE_RATE))
+    fade_out = min(n_samples, int(2.0 * SAMPLE_RATE))
     if fade_in > 0:
         stereo[:fade_in] *= np.linspace(0.0, 1.0, fade_in)[:, None]
     if fade_out > 0:
@@ -1178,11 +1211,11 @@ def synthesize_documentary_bgm(n_samples: int, bpm: float) -> np.ndarray:
 
 def synthesize_glide_swell() -> np.ndarray:
     rng = np.random.default_rng(11)
-    n = int(1.15 * SAMPLE_RATE)
+    n = int(1.10 * SAMPLE_RATE)
     t = np.arange(n) / SAMPLE_RATE
-    env = np.sin(np.pi * t / 1.15) ** 1.8
+    env = np.sin(np.pi * t / 1.10) ** 1.8
     air = bandpass(rng.normal(0.0, 1.0, n), 160.0, 950.0) * env
-    sub = np.sin(2.0 * np.pi * (54.0 - 16.0 * (t / 1.15)) * t) * env * 0.35
+    sub = np.sin(2.0 * np.pi * (54.0 - 16.0 * (t / 1.10)) * t) * env * 0.35
     sig = air * 0.65 + sub
     stereo = np.column_stack([sig, sig * 0.96])
     return stereo / (float(np.max(np.abs(stereo))) + 1e-9)
@@ -1193,24 +1226,19 @@ def main() -> None:
     vo_data, sr = sf.read(str(WORK_DIR / "clean_voiceover.wav"), dtype="float64")
     if sr != SAMPLE_RATE:
         raise RuntimeError(f"Expected 48000 Hz clean_voiceover.wav, got {sr}")
-    if vo_data.ndim > 1:
-        vo_mono = np.mean(vo_data, axis=1)
-    else:
-        vo_mono = vo_data
+    vo_mono = np.mean(vo_data, axis=1) if vo_data.ndim > 1 else vo_data
 
     n_samples = len(vo_mono)
     vo_stereo = np.column_stack([vo_mono, vo_mono])
 
-    # Smooth RMS-based sidechain ducking for BGM
     abs_vo = np.abs(vo_mono)
     smooth_env = lowpass(abs_vo, 3.0)
     speech_active = np.clip(smooth_env / (np.percentile(smooth_env, 90) + 1e-6), 0.0, 1.0)
-    duck_gain = 0.09 - 0.045 * speech_active  # 0.09 in silence, ducks to 0.045 during voice
+    duck_gain = 0.09 - 0.045 * speech_active
 
     bgm_stereo = synthesize_documentary_bgm(n_samples, float(plan.get("bpm", 96.0)))
     mix = vo_stereo * 0.92 + bgm_stereo * duck_gain[:, None]
 
-    # Overlay smooth glide swells right across each continuous transition
     swell = synthesize_glide_swell() * 0.14
     for sc in plan["scenes"][1:]:
         start_idx = max(0, int((float(sc["startSec"]) - 0.55) * SAMPLE_RATE))
@@ -1218,8 +1246,7 @@ def main() -> None:
         if end_idx > start_idx:
             mix[start_idx:end_idx] += swell[: end_idx - start_idx]
 
-    mix = np.tanh(mix * 0.95)  # Gentle soft clipper preventing any digital peak distortion
-
+    mix = np.tanh(mix * 0.95)
     master_wav = WORK_DIR / "master_audio.wav"
     master_m4a = WORK_DIR / "master_audio.m4a"
     sf.write(str(master_wav), mix, SAMPLE_RATE, subtype="PCM_16")
@@ -1233,7 +1260,7 @@ def main() -> None:
         check=True,
     )
     master_wav.unlink(missing_ok=True)
-    print(f"[mix_audio] Built unified master_audio.m4a ({n_samples / SAMPLE_RATE:.2f}s).")
+    print(f"[mix_audio] Built master_audio.m4a ({n_samples / SAMPLE_RATE:.2f}s).")
 
 
 if __name__ == "__main__":
@@ -1277,7 +1304,7 @@ def main() -> None:
             chunks.append({"idx": idx, "start": start_f, "end": end_f})
 
     chunks_json = json.dumps(chunks)
-    print(f"[plan_chunks] total_frames={total_frames}, workers={len(chunks)}, chunks={chunks_json}")
+    print(f"[plan_chunks] total_frames={total_frames}, workers={len(chunks)}")
 
     gh_out = os.environ.get("GITHUB_OUTPUT")
     if gh_out:
@@ -1292,6 +1319,7 @@ if __name__ == "__main__":
 '''
 
 FILES["scripts/stitch_chunks.py"] = r'''
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -1318,8 +1346,11 @@ def main() -> None:
         for cf in chunk_files:
             f.write(f"file '{cf.resolve().as_posix()}'\n")
 
+    video_format = os.environ.get("VIDEO_FORMAT", "long_16_9").strip()
+    out_name = "final_short.mp4" if video_format == "short_9_16" else "final_video.mp4"
+
     master_audio = WORK_DIR / "master_audio.m4a"
-    final_mp4 = OUT_DIR / "final_video.mp4"
+    final_mp4 = OUT_DIR / out_name
 
     print(f"[stitch_chunks] Joining {len(chunk_files)} chunk(s) + master_audio.m4a -> {final_mp4}")
     subprocess.run(
@@ -1864,7 +1895,8 @@ function lerp(a: number, b: number, t: number): number {
 function sampleSceneCamera(
   scene: DocumentaryScene,
   tSec: number,
-  frame: number
+  frame: number,
+  isVertical: boolean
 ): { pos: [number, number, number]; look: [number, number, number] } {
   const dur = Math.max(0.1, scene.endSec - scene.startSec);
   const u = Math.max(0, Math.min(1, (tSec - scene.startSec) / dur));
@@ -1879,12 +1911,13 @@ function sampleSceneCamera(
 
   const driftX = Math.sin(frame * 0.014) * 0.16;
   const driftY = Math.cos(frame * 0.011) * 0.09;
+  const pull = isVertical ? 1.16 : 1.0;
 
   return {
     pos: [
-      scene.worldPos[0] + lerp(wpA.offset[0], wpB.offset[0], localT) + driftX,
+      scene.worldPos[0] + lerp(wpA.offset[0], wpB.offset[0], localT) * pull + driftX,
       scene.worldPos[1] + lerp(wpA.offset[1], wpB.offset[1], localT) + driftY,
-      scene.worldPos[2] + lerp(wpA.offset[2], wpB.offset[2], localT),
+      scene.worldPos[2] + lerp(wpA.offset[2], wpB.offset[2], localT) * pull,
     ],
     look: [
       scene.worldPos[0] + lerp(wpA.lookOffset[0], wpB.lookOffset[0], localT),
@@ -1901,7 +1934,12 @@ interface CameraState {
   accentHex: string;
 }
 
-function computeContinuousCamera(plan: DocumentaryPlan, tSec: number, frame: number): CameraState {
+function computeContinuousCamera(
+  plan: DocumentaryPlan,
+  tSec: number,
+  frame: number,
+  isVertical: boolean
+): CameraState {
   const scenes = plan.scenes;
   if (scenes.length === 0) {
     return { camPos: [0, 2, 7], lookAt: [0, 0, 0], bgHex: "#08101E", accentHex: "#22D3EE" };
@@ -1911,14 +1949,14 @@ function computeContinuousCamera(plan: DocumentaryPlan, tSec: number, frame: num
   if (activeIdx === -1) activeIdx = scenes.length - 1;
 
   const current = scenes[activeIdx];
-  const currSample = sampleSceneCamera(current, tSec, frame);
-  const halfWin = 1.15; // 2.3s continuous glide across chapter boundaries
+  const currSample = sampleSceneCamera(current, tSec, frame, isVertical);
+  const halfWin = isVertical ? 0.9 : 1.15;
 
   if (activeIdx < scenes.length - 1) {
     const distToEnd = current.endSec - tSec;
     if (distToEnd <= halfWin) {
       const next = scenes[activeIdx + 1];
-      const nextSample = sampleSceneCamera(next, tSec, frame);
+      const nextSample = sampleSceneCamera(next, tSec, frame, isVertical);
       const blend = smoothstep(0, 1, (halfWin - distToEnd) / (halfWin * 2));
       return {
         camPos: [
@@ -1941,7 +1979,7 @@ function computeContinuousCamera(plan: DocumentaryPlan, tSec: number, frame: num
     const distFromStart = tSec - current.startSec;
     if (distFromStart < halfWin) {
       const prev = scenes[activeIdx - 1];
-      const prevSample = sampleSceneCamera(prev, tSec, frame);
+      const prevSample = sampleSceneCamera(prev, tSec, frame, isVertical);
       const blend = smoothstep(0, 1, 0.5 + distFromStart / (halfWin * 2));
       return {
         camPos: [
@@ -2030,8 +2068,9 @@ export const Continuous3DWorld: React.FC<{ plan: DocumentaryPlan }> = ({ plan })
   const frame = useCurrentFrame();
   const { width, height, fps } = useVideoConfig();
   const tSec = frame / fps;
+  const isVertical = height > width;
 
-  const camState = computeContinuousCamera(plan, tSec, frame);
+  const camState = computeContinuousCamera(plan, tSec, frame, isVertical);
   const visibleScenes = plan.scenes.filter(
     (s) => tSec >= s.startSec - 2.4 && tSec <= s.endSec + 2.4
   );
@@ -2040,7 +2079,7 @@ export const Continuous3DWorld: React.FC<{ plan: DocumentaryPlan }> = ({ plan })
     <ThreeCanvas
       width={width}
       height={height}
-      camera={{ fov: 40, near: 0.1, far: 45, position: camState.camPos }}
+      camera={{ fov: isVertical ? 52 : 40, near: 0.1, far: 45, position: camState.camPos }}
       gl={{ antialias: true, powerPreference: "high-performance" }}
     >
       <color attach="background" args={[camState.bgHex]} />
@@ -2048,7 +2087,7 @@ export const Continuous3DWorld: React.FC<{ plan: DocumentaryPlan }> = ({ plan })
 
       <CameraController camPos={camState.camPos} lookAt={camState.lookAt} />
 
-      <ambientLight intensity={0.68} />
+      <ambientLight intensity={0.7} />
       <directionalLight
         position={[camState.camPos[0] + 6, camState.camPos[1] + 9, camState.camPos[2] + 5]}
         intensity={1.7}
@@ -2230,7 +2269,7 @@ registerRoot(RemotionRoot);
 '''
 
 FILES[".github/workflows/render_video.yml"] = r'''
-name: InfraVerse Unlimited Dynamic 3D Factory
+name: Long Video Factory (16:9)
 
 on:
   push:
@@ -2290,7 +2329,6 @@ jobs:
     outputs:
       has_input: ${{ steps.check_input.outputs.has_input }}
       chunks_json: ${{ steps.chunk_plan.outputs.chunks_json }}
-      worker_count: ${{ steps.chunk_plan.outputs.worker_count }}
 
     steps:
       - name: Checkout repository
@@ -2305,10 +2343,9 @@ jobs:
           files=(input/*.mp3 input/*.wav input/*.m4a input/*.aac input/*.flac input/*.ogg input/*.mp4 input/*.mov input/*.mkv input/*.webm)
           if [ ${#files[@]} -eq 0 ]; then
             echo "has_input=false" >> $GITHUB_OUTPUT
-            echo "No media file in input/. Skipping render."
           else
             echo "has_input=true" >> $GITHUB_OUTPUT
-            echo "Found media input: ${files[*]}"
+            echo "Found 16:9 media input: ${files[*]}"
           fi
 
       - name: Set up Python 3.11
@@ -2350,6 +2387,7 @@ jobs:
       - name: Step 1 - Audio Clean & Whisper Timestamps
         if: steps.check_input.outputs.has_input == 'true'
         env:
+          INPUT_FOLDER: "input"
           TRIM_SILENCE: ${{ github.event.inputs.trim_silence || 'false' }}
           WHISPER_MODEL: ${{ github.event.inputs.whisper_model || 'small' }}
           PREVIEW_SECONDS: ${{ github.event.inputs.preview_seconds || '0' }}
@@ -2359,8 +2397,10 @@ jobs:
       - name: Step 2 - Gemini Unlimited Dynamic 3D Scene Coder & Self-Healer
         if: steps.check_input.outputs.has_input == 'true'
         env:
+          INPUT_FOLDER: "input"
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           QUALITY_PRESET: ${{ github.event.inputs.quality_preset || '1080p_30fps' }}
+          VIDEO_FORMAT: "long_16_9"
         run: |
           python scripts/generate_scenes.py
 
@@ -2392,7 +2432,7 @@ jobs:
         if: steps.check_input.outputs.has_input == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: prepared-factory
+          name: prepared-long
           path: |
             build_bundle/
             work/master_audio.m4a
@@ -2418,7 +2458,7 @@ jobs:
       - name: Download Prepared Remotion Bundle
         uses: actions/download-artifact@v4
         with:
-          name: prepared-factory
+          name: prepared-long
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
@@ -2440,7 +2480,7 @@ jobs:
           npm install --no-audit --no-fund
           npx remotion browser ensure
 
-      - name: Render Silent 3D Video Chunk ${{ matrix.chunk.idx }} (frames ${{ matrix.chunk.start }}-${{ matrix.chunk.end }})
+      - name: Render Silent 3D Chunk ${{ matrix.chunk.idx }}
         run: |
           mkdir -p out
           npx remotion render build_bundle Main out/chunk_${{ matrix.chunk.idx }}.mp4 \
@@ -2458,7 +2498,7 @@ jobs:
       - name: Upload Rendered Chunk ${{ matrix.chunk.idx }}
         uses: actions/upload-artifact@v4
         with:
-          name: chunk-${{ matrix.chunk.idx }}
+          name: long-chunk-${{ matrix.chunk.idx }}
           path: out/chunk_${{ matrix.chunk.idx }}.mp4
           retention-days: 2
 
@@ -2475,12 +2515,12 @@ jobs:
       - name: Download Prepared Audio & Metadata
         uses: actions/download-artifact@v4
         with:
-          name: prepared-factory
+          name: prepared-long
 
       - name: Download All Video Chunks
         uses: actions/download-artifact@v4
         with:
-          pattern: chunk-*
+          pattern: long-chunk-*
           path: chunks
           merge-multiple: true
 
@@ -2495,15 +2535,273 @@ jobs:
           sudo apt-get install -y ffmpeg
 
       - name: Seamlessly Join Video Chunks + Master Audio
+        env:
+          VIDEO_FORMAT: "long_16_9"
         run: |
           python scripts/stitch_chunks.py
 
-      - name: Upload Final 3D Video & Logs
+      - name: Upload Final 16:9 Video
         uses: actions/upload-artifact@v4
         with:
-          name: InfraVerse-Final-Video
+          name: InfraVerse-Long-16-9
           path: |
             out/final_video.mp4
+            work/frame0_smoke.png
+            work/scene_plan.json
+            work/transcript.json
+          retention-days: 7
+'''
+
+FILES[".github/workflows/render_short.yml"] = r'''
+name: Shorts Factory (9:16 Vertical)
+
+on:
+  push:
+    paths:
+      - "input_short/**"
+  workflow_dispatch:
+    inputs:
+      trim_silence:
+        description: "Trim long pauses (>0.65s) in Short voiceover?"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      whisper_model:
+        description: "Whisper speech model size"
+        required: false
+        default: "small"
+        type: choice
+        options:
+          - "tiny"
+          - "base"
+          - "small"
+
+jobs:
+  plan_and_prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      has_input: ${{ steps.check_input.outputs.has_input }}
+      chunks_json: ${{ steps.chunk_plan.outputs.chunks_json }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for uploaded audio inside input_short/
+        id: check_input
+        run: |
+          shopt -s nullglob nocaseglob
+          files=(input_short/*.mp3 input_short/*.wav input_short/*.m4a input_short/*.aac input_short/*.flac input_short/*.ogg input_short/*.mp4 input_short/*.mov input_short/*.mkv input_short/*.webm)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "has_input=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_input=true" >> $GITHUB_OUTPUT
+            echo "Found 9:16 Short audio: ${files[*]}"
+          fi
+
+      - name: Set up Python 3.11
+        if: steps.check_input.outputs.has_input == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Set up Node.js 22
+        if: steps.check_input.outputs.has_input == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install FFmpeg & Headless Chrome libraries
+        if: steps.check_input.outputs.has_input == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ffmpeg \
+            libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 \
+            libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
+            libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 \
+            libasound2t64 || sudo apt-get install -y libasound2
+
+      - name: Install Python dependencies
+        if: steps.check_input.outputs.has_input == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Node dependencies & Remotion Headless Chrome
+        if: steps.check_input.outputs.has_input == 'true'
+        run: |
+          npm install --no-audit --no-fund
+          npx remotion browser ensure
+
+      - name: Step 1 - Clean Full X-Second Short Audio & Transcribe
+        if: steps.check_input.outputs.has_input == 'true'
+        env:
+          INPUT_FOLDER: "input_short"
+          TRIM_SILENCE: ${{ github.event.inputs.trim_silence || 'false' }}
+          WHISPER_MODEL: ${{ github.event.inputs.whisper_model || 'small' }}
+          PREVIEW_SECONDS: "0"
+        run: |
+          python scripts/analyze_audio.py
+
+      - name: Step 2 - Gemini Vertical 9:16 3D Scene Coder & Self-Healer
+        if: steps.check_input.outputs.has_input == 'true'
+        env:
+          INPUT_FOLDER: "input_short"
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VIDEO_FORMAT: "short_9_16"
+        run: |
+          python scripts/generate_scenes.py
+
+      - name: Step 3 - Validate Uniqueness, Zero Text & Zero Hard Cuts
+        if: steps.check_input.outputs.has_input == 'true'
+        run: |
+          python scripts/validate_scenes.py
+
+      - name: Step 4 - Synthesize & Duck Master Short Audio
+        if: steps.check_input.outputs.has_input == 'true'
+        run: |
+          python scripts/mix_audio.py
+
+      - name: Step 5 - Frame 0 Smoke Test & Bundle Project Once
+        if: steps.check_input.outputs.has_input == 'true'
+        run: |
+          npx remotion still src/index.ts Main work/frame0_smoke.png --frame=0 --gl=swangle
+          npx remotion bundle src/index.ts --public-dir public --out-dir build_bundle
+
+      - name: Step 6 - Plan Workers
+        id: chunk_plan
+        if: steps.check_input.outputs.has_input == 'true'
+        env:
+          FORCE_WORKERS: "auto"
+        run: |
+          python scripts/plan_chunks.py
+
+      - name: Upload Prepared Short Bundle
+        if: steps.check_input.outputs.has_input == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: prepared-short
+          path: |
+            build_bundle/
+            work/master_audio.m4a
+            work/scene_plan.json
+            work/transcript.json
+            work/frame0_smoke.png
+          retention-days: 2
+
+  render_workers:
+    needs: plan_and_prepare
+    if: needs.plan_and_prepare.outputs.has_input == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: ${{ fromJson(needs.plan_and_prepare.outputs.chunks_json) }}
+
+    steps:
+      - name: Checkout repository config
+        uses: actions/checkout@v4
+
+      - name: Download Prepared Remotion Bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: prepared-short
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Headless Chrome OS libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ffmpeg \
+            libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 \
+            libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
+            libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 \
+            libasound2t64 || sudo apt-get install -y libasound2
+
+      - name: Install Node packages & Remotion Chrome
+        run: |
+          npm install --no-audit --no-fund
+          npx remotion browser ensure
+
+      - name: Render Vertical 9:16 Chunk ${{ matrix.chunk.idx }}
+        run: |
+          mkdir -p out
+          npx remotion render build_bundle Main out/chunk_${{ matrix.chunk.idx }}.mp4 \
+            --frames=${{ matrix.chunk.start }}-${{ matrix.chunk.end }} \
+            --muted \
+            --concurrency=3 \
+            --codec=h264 \
+            --pixel-format=yuv420p \
+            --crf=22 \
+            --x264-preset=veryfast \
+            --image-format=jpeg \
+            --jpeg-quality=88 \
+            --gl=swangle
+
+      - name: Upload Short Chunk ${{ matrix.chunk.idx }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: short-chunk-${{ matrix.chunk.idx }}
+          path: out/chunk_${{ matrix.chunk.idx }}.mp4
+          retention-days: 2
+
+  stitch_final_short:
+    needs: [plan_and_prepare, render_workers]
+    if: needs.plan_and_prepare.outputs.has_input == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Stitcher Script
+        uses: actions/checkout@v4
+
+      - name: Download Prepared Audio & Metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: prepared-short
+
+      - name: Download All Short Chunks
+        uses: actions/download-artifact@v4
+        with:
+          pattern: short-chunk-*
+          path: chunks
+          merge-multiple: true
+
+      - name: Set up Python & FFmpeg
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Seamlessly Join Short Video + Master Audio
+        env:
+          VIDEO_FORMAT: "short_9_16"
+        run: |
+          python scripts/stitch_chunks.py
+
+      - name: Upload Final 9:16 Short
+        uses: actions/upload-artifact@v4
+        with:
+          name: InfraVerse-Short-9-16
+          path: |
+            out/final_short.mp4
             work/frame0_smoke.png
             work/scene_plan.json
             work/transcript.json
@@ -2534,10 +2832,10 @@ def run_git_push() -> None:
 
     git("add", ".")
     if git("diff", "--cached", "--quiet", check=False).returncode != 0:
-        git("commit", "-m", "Setup InfraVerse unlimited dynamic 3D factory")
+        git("commit", "-m", "Add dedicated 9:16 Shorts factory alongside 16:9 factory")
     if git("push", check=False).returncode != 0:
         git("push", "-u", "origin", "HEAD")
-    print("\n[setup_factory] SUCCESS! Factory is live on GitHub.")
+    print("\n[setup_factory] SUCCESS! Both 16:9 and 9:16 factories are live on GitHub.")
 
 
 if __name__ == "__main__":
