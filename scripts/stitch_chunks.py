@@ -1,3 +1,4 @@
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -24,8 +25,11 @@ def main() -> None:
         for cf in chunk_files:
             f.write(f"file '{cf.resolve().as_posix()}'\n")
 
+    video_format = os.environ.get("VIDEO_FORMAT", "long_16_9").strip()
+    out_name = "final_short.mp4" if video_format == "short_9_16" else "final_video.mp4"
+
     master_audio = WORK_DIR / "master_audio.m4a"
-    final_mp4 = OUT_DIR / "final_video.mp4"
+    final_mp4 = OUT_DIR / out_name
 
     print(f"[stitch_chunks] Joining {len(chunk_files)} chunk(s) + master_audio.m4a -> {final_mp4}")
     subprocess.run(

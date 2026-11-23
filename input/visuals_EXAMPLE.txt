@@ -1,11 +1,9 @@
-# Upload your voiceover.mp3 + a file named "visuals.txt" inside input/.
-# Describe ANY scenes, cutaways, machines, environments, or animations you want!
-# The AI will follow your flow continuously synced to your voiceover, without repeating visuals.
+# Upload your long voiceover.mp3 + visuals.txt inside input/ for a 16:9 (1920x1080) video!
+# Describe the look (colors, lighting mood) and the exact elements/cutaways you want.
 
 Example:
-- Opening: Start wide outside a massive AI data center campus under a dark sky; smoothly lift the building roof off and dive down into a glowing server rack aisle.
-- Next: Pull a single GPU supercomputer tray out into an exploded view showing copper heatpipes and 8 glowing GPU chips.
-- Next: Zoom into one silicon chip overheating fiery red with rising thermal particles, then clamp a dual-pipe cold plate onto it turning hot orange fluid into cool cyan streams.
-- Next: Follow the hot water pipes outside to cutaway hyperbolic cooling towers spinning fans and releasing gentle vapor clouds.
-- Next: Fly over to a cutaway Small Modular Nuclear Reactor core showing glowing Cherenkov blue water and oscillating control rods powering a spinning 5-stage steam turbine.
-- Next: End on a grid blackout scene where utility power flickers and a mechanical transfer switch flips over to emerald Megapack battery containers feeding the data center.
+Look & Mood: Deep obsidian dark studio with glowing cyan and warm amber highlights.
+- Opening: Start wide outside a massive AI data center campus; smoothly lift the roof off and dive into a glowing server rack aisle.
+- Next: Pull a single GPU blade out in exploded view showing copper heatpipes and 8 glowing GPU chips.
+- Next: Zoom into a silicon die overheating fiery red with rising heat plumes, then clamp a dual-loop cold plate turning hot orange fluid into cyan streams.
+- Next: Follow pipes outside to cutaway hyperbolic cooling towers spinning fans with rising vapor clouds.

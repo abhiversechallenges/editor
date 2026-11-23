@@ -10,11 +10,15 @@ from faster_whisper import WhisperModel
 from scipy.signal import find_peaks
 
 ROOT = Path(__file__).resolve().parent.parent
-INPUT_DIR = ROOT / "input"
 WORK_DIR = ROOT / "work"
 
 AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".webm"}
+
+
+def get_input_dir() -> Path:
+    folder = os.environ.get("INPUT_FOLDER", "input").strip() or "input"
+    return ROOT / folder
 
 
 def git_commit_timestamp(path: Path) -> int:
@@ -34,18 +38,18 @@ def git_commit_timestamp(path: Path) -> int:
     return int(path.stat().st_mtime)
 
 
-def find_latest_input() -> Path:
-    if not INPUT_DIR.exists():
-        raise FileNotFoundError("input/ directory does not exist.")
+def find_latest_input(input_dir: Path) -> Path:
+    if not input_dir.exists():
+        raise FileNotFoundError(f"{input_dir.name}/ directory does not exist.")
     candidates = [
         p
-        for p in INPUT_DIR.iterdir()
+        for p in input_dir.iterdir()
         if p.is_file()
         and p.name != ".gitkeep"
         and p.suffix.lower() in (AUDIO_EXTS | VIDEO_EXTS)
     ]
     if not candidates:
-        raise FileNotFoundError("No audio (.mp3/.wav) or video (.mp4) found inside input/.")
+        raise FileNotFoundError(f"No audio (.mp3/.wav) or video (.mp4) found inside {input_dir.name}/.")
     return max(candidates, key=lambda p: (git_commit_timestamp(p), p.stat().st_mtime, p.name))
 
 
@@ -53,10 +57,8 @@ def run_ffmpeg(args: List[str]) -> None:
     subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"] + args, check=True)
 
 
-def clean_and_normalize_audio(src_path: Path, trim_silence: bool, preview_sec: float) -> Dict[str, Any]:
+def clean_and_normalize_audio(src_path: Path, trim_silence: bool, preview_sec: float, out_wav: Path) -> None:
     WORK_DIR.mkdir(parents=True, exist_ok=True)
-    clean_wav = WORK_DIR / "clean_voiceover.wav"
-
     filters = ["highpass=f=80", "afftdn=nf=-25"]
     if trim_silence:
         filters.append("silenceremove=stop_periods=-1:stop_duration=0.65:stop_threshold=-42dB")
@@ -75,16 +77,9 @@ def clean_and_normalize_audio(src_path: Path, trim_silence: bool, preview_sec: f
         "1",
         "-c:a",
         "pcm_s16le",
-        str(clean_wav),
+        str(out_wav),
     ]
     run_ffmpeg(ff_args)
-
-    return {
-        "source_file": str(src_path.relative_to(ROOT)),
-        "clean_wav": str(clean_wav.relative_to(ROOT)),
-        "silence_trimmed": trim_silence,
-        "preview_seconds": preview_sec,
-    }
 
 
 def transcribe_audio(wav_path: Path) -> Dict[str, Any]:
@@ -97,7 +92,7 @@ def transcribe_audio(wav_path: Path) -> Dict[str, Any]:
         beam_size=5,
         word_timestamps=True,
         vad_filter=True,
-        vad_parameters={"min_silence_duration_ms": 450},
+        vad_parameters={"min_silence_duration_ms": 400},
         initial_prompt=(
             "AI supercluster, Nvidia GPU, NVLink, InfiniBand, liquid cooling, cold plate, "
             "data center, nuclear SMR, small modular reactor, substation, transformer, "
@@ -137,7 +132,7 @@ def analyze_beats(wav_path: Path) -> Dict[str, Any]:
     onset_norm = onset_env / (np.max(onset_env) + 1e-8)
     combined = 0.65 * rms_norm + 0.35 * onset_norm
 
-    min_distance = int((3.0 * sr) / hop_length)
+    min_distance = int((2.2 * sr) / hop_length)
     peaks, _ = find_peaks(
         combined,
         height=float(np.percentile(combined, 70)),
@@ -159,19 +154,30 @@ def analyze_beats(wav_path: Path) -> Dict[str, Any]:
 
 
 def main() -> None:
-    src = find_latest_input()
+    input_dir = get_input_dir()
+    src = find_latest_input(input_dir)
     trim_silence = os.environ.get("TRIM_SILENCE", "false").lower() == "true"
     preview_sec = float(os.environ.get("PREVIEW_SECONDS", "0") or "0")
 
-    print(f"[analyze_audio] Selected latest input: {src}")
-    meta = clean_and_normalize_audio(src, trim_silence=trim_silence, preview_sec=preview_sec)
-    (WORK_DIR / "input_meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
-
+    print(f"[analyze_audio] Selected input from {input_dir.name}/: {src.name}")
     clean_wav = WORK_DIR / "clean_voiceover.wav"
+    clean_and_normalize_audio(src, trim_silence=trim_silence, preview_sec=preview_sec, out_wav=clean_wav)
+
     transcript = transcribe_audio(clean_wav)
     beats = analyze_beats(clean_wav)
     transcript["duration_sec"] = beats["duration_sec"]
 
+    (WORK_DIR / "input_meta.json").write_text(
+        json.dumps(
+            {
+                "input_folder": input_dir.name,
+                "source_file": str(src.relative_to(ROOT)),
+                "duration_sec": beats["duration_sec"],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     (WORK_DIR / "transcript.json").write_text(
         json.dumps(transcript, indent=2, ensure_ascii=False), encoding="utf-8"
     )

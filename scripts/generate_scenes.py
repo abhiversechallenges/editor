@@ -11,7 +11,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gemini_helper import clean_tsx_text, generate_with_fallback, get_client, parse_json_strict
 
 ROOT = Path(__file__).resolve().parent.parent
-INPUT_DIR = ROOT / "input"
 WORK_DIR = ROOT / "work"
 MODELS_DIR = ROOT / "public" / "models"
 GENERATED_DIR = ROOT / "src" / "generated"
@@ -28,7 +27,6 @@ import type { DynamicSceneProps } from "../../types";
 
 Props Reference (type V3 = [number, number, number]):
 - DynamicSceneProps: { frame: number; localFrame: number; progress: number; accentHex: string }
-  (`progress` goes smoothly from 0.0 to 1.0 over this scene's active duration!)
 - MatteBox: { pos?: V3; rot?: V3; size?: V3; color?: string; emissive?: string; emissiveIntensity?: number; roughness?: number; metalness?: number; opacity?: number }
 - MatteCylinder: { pos?: V3; rot?: V3; radiusTop?: number; radiusBottom?: number; height?: number; segments?: number; openEnded?: boolean; thetaStart?: number; thetaLength?: number; doubleSide?: boolean; color?: string; emissive?: string; emissiveIntensity?: number }
 - MatteSphere: { pos?: V3; scale?: V3; radius?: number; color?: string; emissive?: string; emissiveIntensity?: number }
@@ -37,20 +35,16 @@ Props Reference (type V3 = [number, number, number]):
 - SpinGroup: { pos?: V3; rot?: V3; axis?: "x"|"y"|"z"; speed?: number; frame: number; children?: React.ReactNode }
 - BobGroup: { pos?: V3; rot?: V3; axis?: "x"|"y"|"z"; amp?: number; speed?: number; phase?: number; frame: number; children?: React.ReactNode }
 - RevealSlideGroup: { startPos?: V3; endPos?: V3; startScale?: number; endScale?: number; progress: number; startAt?: number; endAt?: number; children?: React.ReactNode }
-  (Use RevealSlideGroup to smoothly lift roofs, slide cutaway walls open, or explode layered assemblies apart as progress moves from startAt to endAt!)
 - FlowStream: { points: V3[]; tubeRadius?: number; tubeColor?: string; particleColor?: string; particleSize?: number; count?: number; speed?: number; frame: number }
-  (points MUST have >= 2 V3 coordinates! Streams glowing spheres along a smooth 3D tube.)
 - RisingParticles: { origin?: V3; spread?: number; height?: number; count?: number; size?: number; color?: string; speed?: number; frame: number }
 - OrbitRing: { center?: V3; radius?: number; count?: number; size?: number; color?: string; speed?: number; tilt?: V3; frame: number }
 - GlbModel: { file: string; pos?: V3; rot?: V3; scale?: number; spinSpeed?: number; frame: number }
 
-STRICT CODE RULES FOR GENERATED SCENE COMPONENTS:
-1. Export EXACTLY `export const Scene_XX: React.FC<DynamicSceneProps> = ({ frame, localFrame, progress, accentHex }) => { ... }` (where XX matches the assigned ID).
-2. NEVER import `three`, `@react-three/fiber`, `remotion`, `useFrame`, `useState`, `useEffect`, or `<Text>` / `<Html>`. Use ONLY `React`, `StudioKit`, `DynamicSceneProps`, and standard `<group>` JSX tags!
-3. Keep all geometry comfortably inside radius `[-3.8 .. +3.8]` in X/Z and `[-2.0 .. +2.8]` in Y around `[0, 0, 0]`.
-4. EVERY scene MUST have continuous motion (using `SpinGroup`, `BobGroup`, `FlowStream`, `RisingParticles`, `OrbitRing`, and `RevealSlideGroup` with `progress`).
-5. Use clean stylized matte colors (#1E293B, #334155, #475569, #CBD5E1, #E2E8F0, #D97706, #064E3B) paired with glowing emissive accents (`accentHex`, `#F97316`, `#22D3EE`, `#10B981`, `#38BDF8`, `#F59E0B`).
-6. ZERO text, zero labels, zero HTML overlays.
+STRICT CODE RULES:
+1. Export EXACTLY `export const Scene_XX: React.FC<DynamicSceneProps> = ({ frame, localFrame, progress, accentHex }) => { ... }`.
+2. NEVER import `three`, `@react-three/fiber`, `remotion`, `useFrame`, `useState`, `useEffect`, or `<Text>` / `<Html>`. Use ONLY `React`, `StudioKit`, `DynamicSceneProps`, and standard `<group>`.
+3. EVERY scene MUST have continuous internal motion + cutaway animation (`RevealSlideGroup`, `SpinGroup`, `FlowStream`, `RisingParticles`, `BobGroup`).
+4. ZERO text, zero labels, zero HTML overlays.
 """
 
 PALETTES = [
@@ -64,7 +58,7 @@ PALETTES = [
     {"bgHex": "#100D22", "accentHex": "#818CF8"},
 ]
 
-DEFAULT_WAYPOINTS = [
+DEFAULT_WAYPOINTS_16_9 = [
     [
         {"offset": [5.6, 3.0, 6.0], "lookOffset": [0.0, 0.2, 0.0]},
         {"offset": [1.8, 1.5, 4.1], "lookOffset": [0.1, 0.1, 0.0]},
@@ -75,10 +69,18 @@ DEFAULT_WAYPOINTS = [
         {"offset": [-1.2, 1.3, 3.6], "lookOffset": [0.0, 0.2, 0.0]},
         {"offset": [3.5, 1.9, 4.4], "lookOffset": [0.1, 0.0, 0.0]},
     ],
+]
+
+DEFAULT_WAYPOINTS_9_16 = [
     [
-        {"offset": [0.5, 4.4, 6.4], "lookOffset": [0.0, 0.0, 0.0]},
-        {"offset": [3.1, 1.7, 4.0], "lookOffset": [0.0, 0.2, 0.0]},
-        {"offset": [-2.4, 1.2, 3.7], "lookOffset": [0.0, 0.1, 0.0]},
+        {"offset": [4.4, 3.2, 6.4], "lookOffset": [0.0, 0.3, 0.0]},
+        {"offset": [1.2, 1.6, 4.6], "lookOffset": [0.0, 0.2, 0.0]},
+        {"offset": [-2.8, 2.2, 5.2], "lookOffset": [0.0, 0.1, 0.0]},
+    ],
+    [
+        {"offset": [-4.2, 2.8, 6.2], "lookOffset": [0.0, 0.2, 0.0]},
+        {"offset": [-0.8, 1.4, 4.4], "lookOffset": [0.0, 0.3, 0.0]},
+        {"offset": [2.9, 2.1, 5.1], "lookOffset": [0.0, 0.1, 0.0]},
     ],
 ]
 
@@ -96,12 +98,17 @@ FORBIDDEN_CODE_PATTERNS = (
 )
 
 
-def load_visuals_prompt() -> str:
-    if not INPUT_DIR.exists():
+def get_input_dir() -> Path:
+    folder = os.environ.get("INPUT_FOLDER", "input").strip() or "input"
+    return ROOT / folder
+
+
+def load_visuals_prompt(input_dir: Path) -> str:
+    if not input_dir.exists():
         return ""
     candidates = [
         p
-        for p in INPUT_DIR.iterdir()
+        for p in input_dir.iterdir()
         if p.is_file() and p.suffix.lower() == ".txt" and p.name != "visuals_EXAMPLE.txt"
     ]
     if not candidates:
@@ -130,7 +137,15 @@ def discover_custom_models() -> List[str]:
     return sorted(p.name for p in MODELS_DIR.iterdir() if p.is_file() and p.suffix.lower() in {".glb", ".gltf"})
 
 
-def compute_scene_range(duration_sec: float) -> tuple[int, int]:
+def compute_scene_range(duration_sec: float, is_short: bool) -> tuple[int, int]:
+    if is_short:
+        if duration_sec <= 20:
+            return 3, 4
+        if duration_sec <= 38:
+            return 4, 6
+        if duration_sec <= 65:
+            return 6, 9
+        return 8, 12
     if duration_sec <= 25:
         return 2, 3
     if duration_sec <= 60:
@@ -164,46 +179,46 @@ def build_safe_fallback_scene_tsx(scene_num: int, accent_hex: str, title: str) -
     safe_comment = re.sub(r"[^A-Za-z0-9 ,.-]", "", title)[:60]
     if variant == 0:
         body = f"""
-      <MatteBox pos={{[0, -0.8, 0]}} size={{[4.8, 0.2, 3.6]}} color="#141E2E" />
-      <RevealSlideGroup startPos={{[0, 0, 0]}} endPos={{[0, 1.35, 0]}} progress={{progress}} startAt={{0.2}} endAt={{0.65}}>
-        <MatteBox pos={{[0, 0.3, 0]}} size={{[3.2, 0.35, 2.2]}} color="#334155" />
+      <MatteBox pos={{[0, -0.8, 0]}} size={{[4.2, 0.2, 3.4]}} color="#141E2E" />
+      <RevealSlideGroup startPos={{[0, 0, 0]}} endPos={{[0, 1.45, 0]}} progress={{progress}} startAt={{0.2}} endAt={{0.65}}>
+        <MatteBox pos={{[0, 0.3, 0]}} size={{[2.8, 0.35, 2.0]}} color="#334155" />
       </RevealSlideGroup>
-      <SpinGroup pos={{[0, -0.1, 0]}} axis="y" speed={{0.8}} frame={{frame}}>
-        <MatteCylinder pos={{[0, 0, 0]}} radiusTop={{0.75}} radiusBottom={{0.95}} height={{1.1}} color="#1E293B" />
-        <MatteCylinder pos={{[0, 0.1, 0]}} radiusTop={{0.45}} radiusBottom={{0.45}} height={{1.2}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.6}} />
+      <SpinGroup pos={{[0, -0.1, 0]}} axis="y" speed={{0.9}} frame={{frame}}>
+        <MatteCylinder pos={{[0, 0, 0]}} radiusTop={{0.7}} radiusBottom={{0.9}} height={{1.2}} color="#1E293B" />
+        <MatteCylinder pos={{[0, 0.1, 0]}} radiusTop={{0.42}} radiusBottom={{0.42}} height={{1.3}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.6}} />
       </SpinGroup>
-      <FlowStream points={{[[-2.4, 0.2, -1.0], [-0.9, 0.4, -0.2], [0.9, 0.4, 0.2], [2.4, 0.2, 1.0]]}} tubeColor="#1E293B" particleColor={{"{accent_hex}"}} count={{6}} speed={{0.65}} frame={{frame}} />"""
+      <FlowStream points={{[[-2.0, 0.2, -0.8], [-0.7, 0.4, -0.2], [0.7, 0.4, 0.2], [2.0, 0.2, 0.8]]}} tubeColor="#1E293B" particleColor={{"{accent_hex}"}} count={{6}} speed={{0.7}} frame={{frame}} />"""
     elif variant == 1:
         body = f"""
-      <MatteBox pos={{[0, -0.9, 0]}} size={{[5.2, 0.18, 3.4]}} color="#0F172A" />
-      <BobGroup pos={{[0, 0.1, 0]}} axis="y" amp={{0.14}} speed={{1.4}} frame={{frame}}>
-        <MatteTorus pos={{[0, 0, 0]}} radius={{1.25}} tube={{0.16}} color="#334155" />
-        <MatteTorus pos={{[0, 0, 0]}} rot={{[1.57, 0, 0]}} radius={{0.95}} tube={{0.09}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.7}} />
+      <MatteBox pos={{[0, -0.9, 0]}} size={{[4.0, 0.18, 3.2]}} color="#0F172A" />
+      <BobGroup pos={{[0, 0.2, 0]}} axis="y" amp={{0.15}} speed={{1.5}} frame={{frame}}>
+        <MatteTorus pos={{[0, 0, 0]}} radius={{1.15}} tube={{0.15}} color="#334155" />
+        <MatteTorus pos={{[0, 0, 0]}} rot={{[1.57, 0, 0]}} radius={{0.88}} tube={{0.09}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.7}} />
       </BobGroup>
-      <OrbitRing center={{[0, 0.1, 0]}} radius={{1.9}} count={{8}} size={{0.11}} color={{"{accent_hex}"}} speed={{0.9}} frame={{frame}} />
-      <RisingParticles origin={{[0, -0.7, 0]}} spread={{1.2}} height={{2.4}} count={{12}} color={{"{accent_hex}"}} frame={{frame}} />"""
+      <OrbitRing center={{[0, 0.2, 0]}} radius={{1.65}} count={{8}} size={{0.1}} color={{"{accent_hex}"}} speed={{0.9}} frame={{frame}} />
+      <RisingParticles origin={{[0, -0.7, 0]}} spread={{1.0}} height={{2.5}} count={{12}} color={{"{accent_hex}"}} frame={{frame}} />"""
     elif variant == 2:
         body = f"""
-      <MatteBox pos={{[0, -0.85, 0]}} size={{[4.6, 0.2, 4.6]}} color="#182234" />
-      <RevealSlideGroup startPos={{[0, 0, 0]}} endPos={{[1.2, 0.8, 0]}} progress={{progress}} startAt={{0.15}} endAt={{0.6}}>
-        <MatteCylinder pos={{[0, 0.1, 0]}} radiusTop={{1.1}} radiusBottom={{1.1}} height={{1.8}} thetaLength={{4.2}} doubleSide={{true}} color="#475569" />
+      <MatteBox pos={{[0, -0.85, 0]}} size={{[3.8, 0.2, 3.8]}} color="#182234" />
+      <RevealSlideGroup startPos={{[0, 0, 0]}} endPos={{[1.0, 0.9, 0]}} progress={{progress}} startAt={{0.15}} endAt={{0.6}}>
+        <MatteCylinder pos={{[0, 0.2, 0]}} radiusTop={{1.0}} radiusBottom={{1.0}} height={{1.9}} thetaLength={{4.2}} doubleSide={{true}} color="#475569" />
       </RevealSlideGroup>
-      <SpinGroup pos={{[0, 0.1, 0]}} axis="y" speed={{1.8}} frame={{frame}}>
-        <MatteBox pos={{[0, 0, 0]}} size={{[1.6, 0.22, 0.3]}} color="#CBD5E1" />
-        <MatteBox pos={{[0, 0, 0]}} size={{[0.3, 0.22, 1.6]}} color="#CBD5E1" />
-        <MatteSphere pos={{[0, 0.4, 0]}} radius={{0.38}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.9}} />
+      <SpinGroup pos={{[0, 0.2, 0]}} axis="y" speed={{1.8}} frame={{frame}}>
+        <MatteBox pos={{[0, 0, 0]}} size={{[1.45, 0.22, 0.28]}} color="#CBD5E1" />
+        <MatteBox pos={{[0, 0, 0]}} size={{[0.28, 0.22, 1.45]}} color="#CBD5E1" />
+        <MatteSphere pos={{[0, 0.45, 0]}} radius={{0.36}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.9}} />
       </SpinGroup>"""
     else:
         body = f"""
-      <MatteBox pos={{[0, -0.85, 0]}} size={{[5.4, 0.2, 3.2]}} color="#141C2B" />
-      <FlowStream points={{[[-2.5, 0.9, 0], [-1.1, 0.1, 0.4], [1.1, 0.1, -0.4], [2.5, 0.9, 0]]}} tubeColor="#334155" particleColor={{"{accent_hex}"}} count={{7}} speed={{0.8}} frame={{frame}} />
-      <BobGroup pos={{[-1.6, 0.0, 0]}} axis="y" amp={{0.18}} speed={{1.6}} frame={{frame}}>
-        <MatteBox size={{[0.9, 1.3, 0.9]}} color="#243146" />
+      <MatteBox pos={{[0, -0.85, 0]}} size={{[4.4, 0.2, 3.0]}} color="#141C2B" />
+      <FlowStream points={{[[-2.0, 0.9, 0], [-0.9, 0.1, 0.3], [0.9, 0.1, -0.3], [2.0, 0.9, 0]]}} tubeColor="#334155" particleColor={{"{accent_hex}"}} count={{7}} speed={{0.85}} frame={{frame}} />
+      <BobGroup pos={{[-1.3, 0.0, 0]}} axis="y" amp={{0.18}} speed={{1.6}} frame={{frame}}>
+        <MatteBox size={{[0.8, 1.35, 0.8]}} color="#243146" />
       </BobGroup>
-      <BobGroup pos={{[1.6, 0.0, 0]}} axis="y" amp={{0.18}} speed={{1.6}} phase={{1.5}} frame={{frame}}>
-        <MatteBox size={{[0.9, 1.3, 0.9]}} color="#243146" />
+      <BobGroup pos={{[1.3, 0.0, 0]}} axis="y" amp={{0.18}} speed={{1.6}} phase={{1.5}} frame={{frame}}>
+        <MatteBox size={{[0.8, 1.35, 0.8]}} color="#243146" />
       </BobGroup>
-      <MatteCylinder pos={{[0, 0.0, 0]}} radiusTop={{0.45}} radiusBottom={{0.55}} height={{1.5}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.4}} />"""
+      <MatteCylinder pos={{[0, 0.1, 0]}} radiusTop={{0.42}} radiusBottom={{0.52}} height={{1.6}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.4}} />"""
 
     return f"""import React from "react";
 import {{
@@ -223,10 +238,6 @@ export const Scene_{scene_num:02d}: React.FC<DynamicSceneProps> = ({{ frame, pro
 
 
 def extract_scenes_dict(raw_text: str) -> Dict[str, str]:
-    """
-    Expect Gemini to return JSON mapping scene keys ("Scene_01", ...) to TSX strings,
-    or fall back to splitting `// === SCENE_XX ===` blocks if returned as raw TSX.
-    """
     cleaned = clean_tsx_text(raw_text)
     try:
         parsed = json.loads(cleaned)
@@ -264,6 +275,7 @@ def normalize_storyboard(
     fps: int,
     width: int,
     height: int,
+    is_short: bool,
 ) -> Dict[str, Any]:
     raw_scenes = raw_board.get("scenes") or []
     if not raw_scenes:
@@ -273,6 +285,7 @@ def normalize_storyboard(
     avg_len = duration_sec / count
     cursor = 0.0
     scenes: List[Dict[str, Any]] = []
+    wp_bank = DEFAULT_WAYPOINTS_9_16 if is_short else DEFAULT_WAYPOINTS_16_9
 
     for idx, sc in enumerate(raw_scenes):
         is_last = idx == count - 1
@@ -281,10 +294,11 @@ def normalize_storyboard(
             end_sec = round(duration_sec, 3)
         else:
             raw_end = float(sc.get("endSec", (idx + 1) * avg_len))
-            min_end = start_sec + max(4.5, avg_len * 0.5)
-            max_end = duration_sec - (count - idx - 1) * 4.5
+            min_gap = 3.2 if is_short else 4.5
+            min_end = start_sec + max(min_gap, avg_len * 0.5)
+            max_end = duration_sec - (count - idx - 1) * min_gap
             clamped = min(max(raw_end, min_end), max(min_end, max_end))
-            end_sec = snap_to_peak(clamped, peaks, start_sec + 4.0, duration_sec - 4.0)
+            end_sec = snap_to_peak(clamped, peaks, start_sec + min_gap - 0.5, duration_sec - min_gap)
         cursor = end_sec
 
         pal = PALETTES[idx % len(PALETTES)]
@@ -292,7 +306,7 @@ def normalize_storyboard(
         accent_hex = sanitize_hex(sc.get("accentHex"), pal["accentHex"])
 
         wps = sc.get("cameraWaypoints")
-        default_wps = DEFAULT_WAYPOINTS[idx % len(DEFAULT_WAYPOINTS)]
+        default_wps = wp_bank[idx % len(wp_bank)]
         clean_wps = []
         if isinstance(wps, list) and len(wps) >= 2:
             for wi, wp in enumerate(wps[:4]):
@@ -305,14 +319,13 @@ def normalize_storyboard(
                     look = dwp["lookOffset"]
                 clean_wps.append(
                     {
-                        "offset": [round(min(8.0, max(-8.0, float(x))), 3) for x in off],
+                        "offset": [round(min(8.5, max(-8.5, float(x))), 3) for x in off],
                         "lookOffset": [round(min(1.5, max(-1.5, float(x))), 3) for x in look],
                     }
                 )
         else:
             clean_wps = default_wps
 
-        # Spaced >= 31.3 units apart along a smooth winding path so fog hides adjacent scenes seamlessly
         world_pos = [
             round(idx * 28.0, 2),
             round(2.6 if idx % 2 == 1 else 0.0, 2),
@@ -324,7 +337,7 @@ def normalize_storyboard(
                 "id": f"scene_{idx + 1:02d}",
                 "componentName": f"Scene_{idx + 1:02d}",
                 "visualConcept": str(sc.get("visualConcept") or f"Unique Engineering Concept {idx + 1}")[:120],
-                "visualSpec": str(sc.get("visualSpec") or "Animated multi-part stylized 3D cutaway mechanism with continuous glowing energy flow.")[:500],
+                "visualSpec": str(sc.get("visualSpec") or "Animated multi-part stylized 3D cutaway mechanism.")[:500],
                 "startSec": start_sec,
                 "endSec": end_sec,
                 "worldPos": world_pos,
@@ -409,7 +422,7 @@ def self_heal_scenes(client: Any, plan: Dict[str, Any]) -> None:
     for attempt in range(1, 3):
         res = run_tsc_check()
         if res.returncode == 0:
-            print(f"[self_heal] TypeScript compiled cleanly with 0 errors!")
+            print("[self_heal] TypeScript compiled cleanly with 0 errors!")
             return
 
         output = (res.stdout or "") + "\n" + (res.stderr or "")
@@ -424,28 +437,26 @@ def self_heal_scenes(client: Any, plan: Dict[str, Any]) -> None:
             broken_code = sc_path.read_text(encoding="utf-8") if sc_path.exists() else ""
             err_lines = [ln for ln in output.splitlines() if cname in ln][:8]
             fix_prompt = f"""
-Fix the TypeScript errors in this single Remotion Three.js scene file `{cname}.tsx`.
+Fix the TypeScript errors in `{cname}.tsx`.
 
 {STUDIO_KIT_API_DOC}
 
-COMPILER ERRORS:
+ERRORS:
 {chr(10).join(err_lines)}
 
-CURRENT CODE:
+CODE:
 {broken_code}
 
-Return ONLY the fixed complete TypeScript TSX file for `{cname}.tsx`.
+Return ONLY the fixed complete TSX file.
 """
             try:
                 fixed_raw = generate_with_fallback(client, fix_prompt, role="flash", json_mode=False, temperature=0.2)
                 scene_num = int(cname.split("_")[1])
-                fixed_code = sanitize_scene_tsx(fixed_raw, scene_num)
-                sc_path.write_text(fixed_code, encoding="utf-8")
+                sc_path.write_text(sanitize_scene_tsx(fixed_raw, scene_num), encoding="utf-8")
             except Exception as exc:
-                print(f"[self_heal] Repair call failed for {cname} ({exc}); will fallback if needed.")
+                print(f"[self_heal] Repair skipped for {cname} ({exc}).")
             time.sleep(3)
 
-    # Final check: swap ONLY stubbornly broken files to unique procedural fallback
     final_res = run_tsc_check()
     if final_res.returncode != 0:
         final_out = (final_res.stdout or "") + "\n" + (final_res.stderr or "")
@@ -460,8 +471,7 @@ Return ONLY the fixed complete TypeScript TSX file for `{cname}.tsx`.
             )
         verify = run_tsc_check()
         if verify.returncode != 0:
-            raise RuntimeError(f"TypeScript still failed after fallbacks:\n{verify.stdout}\n{verify.stderr}")
-        print("[self_heal] Fallback recovery succeeded. 0 TypeScript errors.")
+            raise RuntimeError(f"TypeScript failed after fallbacks:\n{verify.stdout}\n{verify.stderr}")
 
 
 def main() -> None:
@@ -471,23 +481,38 @@ def main() -> None:
     bpm = float(beats["bpm"])
     peaks = list(beats["emphasis_peaks"])
 
-    quality = os.environ.get("QUALITY_PRESET", "1080p_30fps")
-    if quality == "720p_24fps":
+    video_format = os.environ.get("VIDEO_FORMAT", "long_16_9").strip()
+    quality = os.environ.get("QUALITY_PRESET", "1080p_30fps").strip()
+    is_short = video_format == "short_9_16"
+
+    if is_short:
+        width, height, fps = 1080, 1920, 30
+    elif quality == "720p_24fps":
         width, height, fps = 1280, 720, 24
     else:
         width, height, fps = 1920, 1080, 30
 
-    visuals_prompt = load_visuals_prompt()
+    input_dir = get_input_dir()
+    visuals_prompt = load_visuals_prompt(input_dir)
     custom_models = discover_custom_models()
-    min_sc, max_sc = compute_scene_range(duration_sec)
+    min_sc, max_sc = compute_scene_range(duration_sec, is_short=is_short)
+
+    framing_note = (
+        "VERTICAL 9:16 YOUTUBE SHORT MODE (1080x1920): Keep X spread tight [-2.2 .. +2.2] and build TALL vertical stacked machinery/towers [-2.2 .. +2.8 in Y] so every visual element fills a vertical phone screen! Use punchy pacing synced tightly to the user's hook and voiceover."
+        if is_short
+        else "WIDESCREEN 16:9 MODE (1920x1080): Keep geometry spread within [-3.8 .. +3.8] X/Z and [-2.0 .. +2.8] Y."
+    )
 
     storyboard_prompt = f"""
-You are the Lead 3D Film Director for a stylized matte-3D engineering documentary channel (like Professor Of How / Zack D. Films mechanical cutaways, ZERO text on screen).
+You are the Lead 3D Film Director for a stylized matte-3D engineering channel (like Professor Of How / Zack D. Films mechanical cutaways, ZERO text on screen).
 
-USER VISUAL DESCRIPTION (Follow every visual idea, order, and object requested here):
-{visuals_prompt if visuals_prompt else "(No visuals.txt uploaded — invent vivid, completely unique engineering & infrastructure 3D scenes matching every chapter of the voiceover!)"}
+ASPECT & FRAMING:
+{framing_note}
 
-AVAILABLE CUSTOM .GLB MODELS IN public/models/:
+USER'S LOOK, STYLE & ELEMENTS DESCRIPTION (Follow EVERY visual style, color look, mood, and element requested by the user!):
+{visuals_prompt if visuals_prompt else "(No visuals.txt uploaded — invent vivid, completely unique engineering & infrastructure 3D scenes matching the voiceover!)"}
+
+CUSTOM .GLB MODELS IN public/models/:
 {json.dumps(custom_models)}
 
 VOICEOVER TRANSCRIPT ({duration_sec:.2f}s):
@@ -496,26 +521,26 @@ VOICEOVER TRANSCRIPT ({duration_sec:.2f}s):
 VOCAL EMPHASIS PEAKS (seconds):
 {json.dumps(peaks[:120])}
 
-HARD STORYBOARD RULES:
-1. Divide the {duration_sec:.2f}s narration naturally into {min_sc} to {max_sc} continuous chapters (scenes) based on topic shifts (varying naturally e.g. 6s–24s; do NOT make robotic equal lengths!).
-2. ZERO REPETITION: Every single chapter MUST depict a completely DIFFERENT visualConcept, layout, and hero objects! Never repeat the same visual twice.
-3. MULTI-STAGE CONTINUOUS MOTION: Describe cutaway actions inside `visualSpec` (e.g., outer roof lifting up, walls sliding open, exploded layers rising, glowing particles flowing through pipes, spinning turbines, pulsing grids, or custom `.glb` models if listed above).
-4. CAMERA FLIGHT: Give 3 smooth `cameraWaypoints` per scene (`offset`: [x, y, z] within radius 3.4..7.2 and height 0.7..4.6; `lookOffset`: [lx, ly, lz] within -0.5..0.5) transitioning smoothly from wide view to close-up cutaway.
-5. COHESIVE DARK STUDIO COLORS: Pick deep dark `bgHex` (#08101E, #140D12, #07181E, #071915, #141009, #100D22) and vivid `accentHex`.
+HARD RULES:
+1. Build the FULL {duration_sec:.2f}s video into {min_sc} to {max_sc} continuous chapters ("scenes") matching the narration and the user's requested hook/elements/look.
+2. ZERO REPETITION: Every chapter MUST have a completely DIFFERENT `visualConcept`, layout, and hero objects!
+3. CONTINUOUS CUTAWAY MOTION: Describe moving parts & `RevealSlideGroup` cutaways in `visualSpec`.
+4. CAMERA FLIGHT: 3 smooth `cameraWaypoints` per scene (`offset`: [x,y,z], `lookOffset`: [lx,ly,lz]).
+5. HONOR USER LOOK & COLORS: Choose `bgHex` and `accentHex` matching the exact look/mood requested in the user's description (or cohesive dark studio hues if unspecified).
 
 Return ONLY valid JSON:
 {{
   "scenes": [
     {{
       "visualConcept": "Short unique concept summary",
-      "visualSpec": "Detailed 3D composition: base slab, cutaway shell opening at progress 0.2->0.6, spinning internal rotors, glowing flow pipes, rising thermal orbs, etc.",
-      "endSec": 14.5,
+      "visualSpec": "Detailed 3D composition & cutaway motions matching user elements",
+      "endSec": 6.5,
       "bgHex": "#08101E",
       "accentHex": "#22D3EE",
       "cameraWaypoints": [
-        {{"offset": [5.8, 3.1, 6.2], "lookOffset": [0.0, 0.2, 0.0]}},
-        {{"offset": [1.6, 1.5, 4.0], "lookOffset": [0.1, 0.1, 0.0]}},
-        {{"offset": [-3.4, 2.0, 4.4], "lookOffset": [-0.1, 0.0, 0.0]}}
+        {{"offset": [4.6, 3.0, 6.2], "lookOffset": [0.0, 0.2, 0.0]}},
+        {{"offset": [1.4, 1.5, 4.4], "lookOffset": [0.0, 0.2, 0.0]}},
+        {{"offset": [-2.8, 2.1, 4.9], "lookOffset": [0.0, 0.0, 0.0]}}
       ]
     }}
   ]
@@ -523,7 +548,7 @@ Return ONLY valid JSON:
 """
 
     client = get_client()
-    print("[generate_scenes] Step 1/2: Planning unique continuous storyboard with Gemini Pro...")
+    print(f"[generate_scenes] Planning storyboard from {input_dir.name}/ ({width}x{height} @ {fps}fps)...")
     raw_board = generate_with_fallback(client, storyboard_prompt, role="pro", json_mode=True, temperature=0.45)
     plan = normalize_storyboard(
         parse_json_strict(raw_board),
@@ -533,17 +558,17 @@ Return ONLY valid JSON:
         fps=fps,
         width=width,
         height=height,
+        is_short=is_short,
     )
     (WORK_DIR / "scene_plan.json").write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    # Clear previous dynamically generated scenes
     SCENES_DIR.mkdir(parents=True, exist_ok=True)
     for old_file in SCENES_DIR.glob("Scene_*.tsx"):
         old_file.unlink()
 
     scenes = plan["scenes"]
     batch_size = 4
-    print(f"[generate_scenes] Step 2/2: Coding {len(scenes)} unique 3D scenes in batches of {batch_size}...")
+    print(f"[generate_scenes] Coding {len(scenes)} unique 3D scenes in batches of {batch_size}...")
 
     for b_start in range(0, len(scenes), batch_size):
         batch = scenes[b_start : b_start + batch_size]
@@ -559,14 +584,14 @@ Return ONLY valid JSON:
         ]
         code_prompt = f"""
 You are an Expert Three.js / React Three Fiber 3D Technical Animator.
-Build rich, multi-part, stylized matte-3D cutaway scenes for the batch below.
-
+{framing_note}
+USER LOOK GUIDANCE: {visuals_prompt[:1000] if visuals_prompt else "Sleek stylized matte-3D engineering studio."}
 {STUDIO_KIT_API_DOC}
 
 BATCH TO CODE (Make every scene visually distinct, richly detailed with 8–18 components each, with cutaway RevealSlideGroup + continuous SpinGroup/BobGroup/FlowStream/RisingParticles motion!):
 {json.dumps(batch_specs, indent=2)}
 
-Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_01") and each value is the complete valid TypeScript TSX file string starting with `import React from "react";`.
+Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_01") and each value is the complete valid TSX file string starting with `import React from "react";`.
 """
         try:
             raw_code_json = generate_with_fallback(
@@ -579,7 +604,7 @@ Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_
             )
             generated_map = extract_scenes_dict(raw_code_json)
         except Exception as exc:
-            print(f"[generate_scenes] Batch {b_start+1} API failed ({exc}); using safe fallbacks for batch.")
+            print(f"[generate_scenes] Batch {b_start+1} API failed ({exc}); using safe fallbacks.")
             generated_map = {}
 
         for sc in batch:
@@ -590,11 +615,10 @@ Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_
             try:
                 if not raw_tsx.strip():
                     raise ValueError(f"Empty code returned for {cname}")
-                clean_code = sanitize_scene_tsx(raw_tsx, num)
-                out_path.write_text(clean_code, encoding="utf-8")
+                out_path.write_text(sanitize_scene_tsx(raw_tsx, num), encoding="utf-8")
                 print(f"  + Generated custom {cname}.tsx ({sc['visualConcept'][:48]})")
             except Exception as exc:
-                print(f"  ! {cname} sanitize issue ({exc}); writing unique procedural fallback.")
+                print(f"  ! {cname} sanitize issue ({exc}); writing unique fallback.")
                 out_path.write_text(
                     build_safe_fallback_scene_tsx(num, sc["accentHex"], sc["visualConcept"]),
                     encoding="utf-8",

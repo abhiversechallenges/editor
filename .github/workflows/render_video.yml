@@ -1,4 +1,4 @@
-name: InfraVerse Unlimited Dynamic 3D Factory
+name: Long Video Factory (16:9)
 
 on:
   push:
@@ -58,7 +58,6 @@ jobs:
     outputs:
       has_input: ${{ steps.check_input.outputs.has_input }}
       chunks_json: ${{ steps.chunk_plan.outputs.chunks_json }}
-      worker_count: ${{ steps.chunk_plan.outputs.worker_count }}
 
     steps:
       - name: Checkout repository
@@ -73,10 +72,9 @@ jobs:
           files=(input/*.mp3 input/*.wav input/*.m4a input/*.aac input/*.flac input/*.ogg input/*.mp4 input/*.mov input/*.mkv input/*.webm)
           if [ ${#files[@]} -eq 0 ]; then
             echo "has_input=false" >> $GITHUB_OUTPUT
-            echo "No media file in input/. Skipping render."
           else
             echo "has_input=true" >> $GITHUB_OUTPUT
-            echo "Found media input: ${files[*]}"
+            echo "Found 16:9 media input: ${files[*]}"
           fi
 
       - name: Set up Python 3.11
@@ -118,6 +116,7 @@ jobs:
       - name: Step 1 - Audio Clean & Whisper Timestamps
         if: steps.check_input.outputs.has_input == 'true'
         env:
+          INPUT_FOLDER: "input"
           TRIM_SILENCE: ${{ github.event.inputs.trim_silence || 'false' }}
           WHISPER_MODEL: ${{ github.event.inputs.whisper_model || 'small' }}
           PREVIEW_SECONDS: ${{ github.event.inputs.preview_seconds || '0' }}
@@ -127,8 +126,10 @@ jobs:
       - name: Step 2 - Gemini Unlimited Dynamic 3D Scene Coder & Self-Healer
         if: steps.check_input.outputs.has_input == 'true'
         env:
+          INPUT_FOLDER: "input"
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           QUALITY_PRESET: ${{ github.event.inputs.quality_preset || '1080p_30fps' }}
+          VIDEO_FORMAT: "long_16_9"
         run: |
           python scripts/generate_scenes.py
 
@@ -160,7 +161,7 @@ jobs:
         if: steps.check_input.outputs.has_input == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: prepared-factory
+          name: prepared-long
           path: |
             build_bundle/
             work/master_audio.m4a
@@ -186,7 +187,7 @@ jobs:
       - name: Download Prepared Remotion Bundle
         uses: actions/download-artifact@v4
         with:
-          name: prepared-factory
+          name: prepared-long
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
@@ -208,7 +209,7 @@ jobs:
           npm install --no-audit --no-fund
           npx remotion browser ensure
 
-      - name: Render Silent 3D Video Chunk ${{ matrix.chunk.idx }} (frames ${{ matrix.chunk.start }}-${{ matrix.chunk.end }})
+      - name: Render Silent 3D Chunk ${{ matrix.chunk.idx }}
         run: |
           mkdir -p out
           npx remotion render build_bundle Main out/chunk_${{ matrix.chunk.idx }}.mp4 \
@@ -226,7 +227,7 @@ jobs:
       - name: Upload Rendered Chunk ${{ matrix.chunk.idx }}
         uses: actions/upload-artifact@v4
         with:
-          name: chunk-${{ matrix.chunk.idx }}
+          name: long-chunk-${{ matrix.chunk.idx }}
           path: out/chunk_${{ matrix.chunk.idx }}.mp4
           retention-days: 2
 
@@ -243,12 +244,12 @@ jobs:
       - name: Download Prepared Audio & Metadata
         uses: actions/download-artifact@v4
         with:
-          name: prepared-factory
+          name: prepared-long
 
       - name: Download All Video Chunks
         uses: actions/download-artifact@v4
         with:
-          pattern: chunk-*
+          pattern: long-chunk-*
           path: chunks
           merge-multiple: true
 
@@ -263,13 +264,15 @@ jobs:
           sudo apt-get install -y ffmpeg
 
       - name: Seamlessly Join Video Chunks + Master Audio
+        env:
+          VIDEO_FORMAT: "long_16_9"
         run: |
           python scripts/stitch_chunks.py
 
-      - name: Upload Final 3D Video & Logs
+      - name: Upload Final 16:9 Video
         uses: actions/upload-artifact@v4
         with:
-          name: InfraVerse-Final-Video
+          name: InfraVerse-Long-16-9
           path: |
             out/final_video.mp4
             work/frame0_smoke.png

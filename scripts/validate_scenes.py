@@ -1,5 +1,4 @@
 import json
-import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -27,9 +26,8 @@ def audit_plan(plan: Dict[str, Any]) -> List[str]:
         if idx > 0 and abs(float(sc["startSec"]) - float(scenes[idx - 1]["endSec"])) > 0.01:
             errors.append(f"Timeline discontinuity between {scenes[idx-1]['id']} and {sc['id']}.")
 
-        wps = sc.get("cameraWaypoints") or []
-        if len(wps) < 2:
-            errors.append(f"{sc['id']} has fewer than 2 cameraWaypoints (risk of static frame).")
+        if len(sc.get("cameraWaypoints") or []) < 2:
+            errors.append(f"{sc['id']} has fewer than 2 cameraWaypoints.")
 
         cname = sc.get("componentName")
         if not (SCENES_DIR / f"{cname}.tsx").exists():
@@ -58,7 +56,7 @@ def main() -> None:
     errs = audit_plan(plan) + audit_source_files()
     if errs:
         raise SystemExit("[validate_scenes] FAILED:\n - " + "\n - ".join(errs))
-    print(f"[validate_scenes] PASSED: {len(plan['scenes'])} unique continuous dynamic scenes, zero text, zero hard cuts.")
+    print(f"[validate_scenes] PASSED: {len(plan['scenes'])} unique continuous dynamic scenes.")
 
 
 if __name__ == "__main__":

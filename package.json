@@ -1,8 +1,8 @@
 {
   "name": "infraverse-dynamic-3d-factory",
-  "version": "2.0.0",
+  "version": "2.2.0",
   "private": true,
-  "description": "Unlimited dynamic continuous 3D documentary factory for Public GitHub Actions",
+  "description": "Unlimited dynamic continuous 3D documentary & custom Shorts factory",
   "scripts": {
     "dev": "remotion studio src/index.ts",
     "build": "remotion bundle src/index.ts --public-dir public --out-dir build_bundle",

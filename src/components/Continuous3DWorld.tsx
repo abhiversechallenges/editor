@@ -17,7 +17,8 @@ function lerp(a: number, b: number, t: number): number {
 function sampleSceneCamera(
   scene: DocumentaryScene,
   tSec: number,
-  frame: number
+  frame: number,
+  isVertical: boolean
 ): { pos: [number, number, number]; look: [number, number, number] } {
   const dur = Math.max(0.1, scene.endSec - scene.startSec);
   const u = Math.max(0, Math.min(1, (tSec - scene.startSec) / dur));
@@ -32,12 +33,13 @@ function sampleSceneCamera(
 
   const driftX = Math.sin(frame * 0.014) * 0.16;
   const driftY = Math.cos(frame * 0.011) * 0.09;
+  const pull = isVertical ? 1.16 : 1.0;
 
   return {
     pos: [
-      scene.worldPos[0] + lerp(wpA.offset[0], wpB.offset[0], localT) + driftX,
+      scene.worldPos[0] + lerp(wpA.offset[0], wpB.offset[0], localT) * pull + driftX,
       scene.worldPos[1] + lerp(wpA.offset[1], wpB.offset[1], localT) + driftY,
-      scene.worldPos[2] + lerp(wpA.offset[2], wpB.offset[2], localT),
+      scene.worldPos[2] + lerp(wpA.offset[2], wpB.offset[2], localT) * pull,
     ],
     look: [
       scene.worldPos[0] + lerp(wpA.lookOffset[0], wpB.lookOffset[0], localT),
@@ -54,7 +56,12 @@ interface CameraState {
   accentHex: string;
 }
 
-function computeContinuousCamera(plan: DocumentaryPlan, tSec: number, frame: number): CameraState {
+function computeContinuousCamera(
+  plan: DocumentaryPlan,
+  tSec: number,
+  frame: number,
+  isVertical: boolean
+): CameraState {
   const scenes = plan.scenes;
   if (scenes.length === 0) {
     return { camPos: [0, 2, 7], lookAt: [0, 0, 0], bgHex: "#08101E", accentHex: "#22D3EE" };
@@ -64,14 +71,14 @@ function computeContinuousCamera(plan: DocumentaryPlan, tSec: number, frame: num
   if (activeIdx === -1) activeIdx = scenes.length - 1;
 
   const current = scenes[activeIdx];
-  const currSample = sampleSceneCamera(current, tSec, frame);
-  const halfWin = 1.15; // 2.3s continuous glide across chapter boundaries
+  const currSample = sampleSceneCamera(current, tSec, frame, isVertical);
+  const halfWin = isVertical ? 0.9 : 1.15;
 
   if (activeIdx < scenes.length - 1) {
     const distToEnd = current.endSec - tSec;
     if (distToEnd <= halfWin) {
       const next = scenes[activeIdx + 1];
-      const nextSample = sampleSceneCamera(next, tSec, frame);
+      const nextSample = sampleSceneCamera(next, tSec, frame, isVertical);
       const blend = smoothstep(0, 1, (halfWin - distToEnd) / (halfWin * 2));
       return {
         camPos: [
@@ -94,7 +101,7 @@ function computeContinuousCamera(plan: DocumentaryPlan, tSec: number, frame: num
     const distFromStart = tSec - current.startSec;
     if (distFromStart < halfWin) {
       const prev = scenes[activeIdx - 1];
-      const prevSample = sampleSceneCamera(prev, tSec, frame);
+      const prevSample = sampleSceneCamera(prev, tSec, frame, isVertical);
       const blend = smoothstep(0, 1, 0.5 + distFromStart / (halfWin * 2));
       return {
         camPos: [
@@ -183,8 +190,9 @@ export const Continuous3DWorld: React.FC<{ plan: DocumentaryPlan }> = ({ plan })
   const frame = useCurrentFrame();
   const { width, height, fps } = useVideoConfig();
   const tSec = frame / fps;
+  const isVertical = height > width;
 
-  const camState = computeContinuousCamera(plan, tSec, frame);
+  const camState = computeContinuousCamera(plan, tSec, frame, isVertical);
   const visibleScenes = plan.scenes.filter(
     (s) => tSec >= s.startSec - 2.4 && tSec <= s.endSec + 2.4
   );
@@ -193,7 +201,7 @@ export const Continuous3DWorld: React.FC<{ plan: DocumentaryPlan }> = ({ plan })
     <ThreeCanvas
       width={width}
       height={height}
-      camera={{ fov: 40, near: 0.1, far: 45, position: camState.camPos }}
+      camera={{ fov: isVertical ? 52 : 40, near: 0.1, far: 45, position: camState.camPos }}
       gl={{ antialias: true, powerPreference: "high-performance" }}
     >
       <color attach="background" args={[camState.bgHex]} />
@@ -201,7 +209,7 @@ export const Continuous3DWorld: React.FC<{ plan: DocumentaryPlan }> = ({ plan })
 
       <CameraController camPos={camState.camPos} lookAt={camState.lookAt} />
 
-      <ambientLight intensity={0.68} />
+      <ambientLight intensity={0.7} />
       <directionalLight
         position={[camState.camPos[0] + 6, camState.camPos[1] + 9, camState.camPos[2] + 5]}
         intensity={1.7}

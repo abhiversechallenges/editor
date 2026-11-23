@@ -34,7 +34,7 @@ def main() -> None:
             chunks.append({"idx": idx, "start": start_f, "end": end_f})
 
     chunks_json = json.dumps(chunks)
-    print(f"[plan_chunks] total_frames={total_frames}, workers={len(chunks)}, chunks={chunks_json}")
+    print(f"[plan_chunks] total_frames={total_frames}, workers={len(chunks)}")
 
     gh_out = os.environ.get("GITHUB_OUTPUT")
     if gh_out:
