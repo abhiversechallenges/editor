@@ -68,13 +68,21 @@ def synthesize_documentary_bgm(n_samples: int, bpm: float) -> np.ndarray:
 
 def synthesize_glide_swell() -> np.ndarray:
     rng = np.random.default_rng(11)
-    n = int(1.10 * SAMPLE_RATE)
+    n = int(1.05 * SAMPLE_RATE)
     t = np.arange(n) / SAMPLE_RATE
-    env = np.sin(np.pi * t / 1.10) ** 1.8
+    env = np.sin(np.pi * t / 1.05) ** 1.8
     air = bandpass(rng.normal(0.0, 1.0, n), 160.0, 950.0) * env
-    sub = np.sin(2.0 * np.pi * (54.0 - 16.0 * (t / 1.10)) * t) * env * 0.35
+    sub = np.sin(2.0 * np.pi * (54.0 - 16.0 * (t / 1.05)) * t) * env * 0.35
     sig = air * 0.65 + sub
     stereo = np.column_stack([sig, sig * 0.96])
+    return stereo / (float(np.max(np.abs(stereo))) + 1e-9)
+
+
+def synthesize_hud_tick() -> np.ndarray:
+    n = int(0.08 * SAMPLE_RATE)
+    t = np.arange(n) / SAMPLE_RATE
+    sig = np.sin(2.0 * np.pi * 1480.0 * t) * np.exp(-t * 60.0) * 0.6
+    stereo = np.column_stack([sig, sig])
     return stereo / (float(np.max(np.abs(stereo))) + 1e-9)
 
 
@@ -93,15 +101,24 @@ def main() -> None:
     speech_active = np.clip(smooth_env / (np.percentile(smooth_env, 90) + 1e-6), 0.0, 1.0)
     duck_gain = 0.09 - 0.045 * speech_active
 
-    bgm_stereo = synthesize_documentary_bgm(n_samples, float(plan.get("bpm", 96.0)))
+    bgm_stereo = synthesize_documentary_bgm(n_samples, float(plan.get("bpm", 102.0)))
     mix = vo_stereo * 0.92 + bgm_stereo * duck_gain[:, None]
 
     swell = synthesize_glide_swell() * 0.14
-    for sc in plan["scenes"][1:]:
-        start_idx = max(0, int((float(sc["startSec"]) - 0.55) * SAMPLE_RATE))
-        end_idx = min(n_samples, start_idx + len(swell))
-        if end_idx > start_idx:
-            mix[start_idx:end_idx] += swell[: end_idx - start_idx]
+    hud_tick = synthesize_hud_tick() * 0.09
+
+    for sc_idx, sc in enumerate(plan["scenes"]):
+        if sc_idx > 0:
+            s_idx = max(0, int((float(sc["startSec"]) - 0.5) * SAMPLE_RATE))
+            e_idx = min(n_samples, s_idx + len(swell))
+            if e_idx > s_idx:
+                mix[s_idx:e_idx] += swell[: e_idx - s_idx]
+
+        for b in sc.get("beats", []):
+            t_idx = max(0, int(float(b["startSec"]) * SAMPLE_RATE))
+            te_idx = min(n_samples, t_idx + len(hud_tick))
+            if te_idx > t_idx:
+                mix[t_idx:te_idx] += hud_tick[: te_idx - t_idx]
 
     mix = np.tanh(mix * 0.95)
     master_wav = WORK_DIR / "master_audio.wav"

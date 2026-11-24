@@ -96,18 +96,31 @@ def transcribe_audio(wav_path: Path) -> Dict[str, Any]:
         initial_prompt=(
             "AI supercluster, Nvidia GPU, NVLink, InfiniBand, liquid cooling, cold plate, "
             "data center, nuclear SMR, small modular reactor, substation, transformer, "
-            "power grid, subsea fiber optic cable, megawatt, gigawatt, battery farm, blackout."
+            "345 kV, 600 kW, 1,000 MW, CDU, subsea fiber optic cable, battery farm, blackout."
         ),
     )
 
     segments: List[Dict[str, Any]] = []
+    words: List[Dict[str, Any]] = []
     for seg in segments_iter:
+        seg_words: List[Dict[str, Any]] = []
+        if seg.words:
+            for w in seg.words:
+                w_item = {
+                    "word": w.word.strip(),
+                    "start": round(float(w.start), 3),
+                    "end": round(float(w.end), 3),
+                }
+                if w_item["word"]:
+                    words.append(w_item)
+                    seg_words.append(w_item)
         segments.append(
             {
                 "id": seg.id,
                 "start": round(float(seg.start), 3),
                 "end": round(float(seg.end), 3),
                 "text": seg.text.strip(),
+                "words": seg_words,
             }
         )
 
@@ -115,6 +128,7 @@ def transcribe_audio(wav_path: Path) -> Dict[str, Any]:
         "language": info.language,
         "duration_sec": round(float(info.duration), 3),
         "segments": segments,
+        "words": words,
         "full_text": " ".join(s["text"] for s in segments),
     }
 
@@ -132,19 +146,19 @@ def analyze_beats(wav_path: Path) -> Dict[str, Any]:
     onset_norm = onset_env / (np.max(onset_env) + 1e-8)
     combined = 0.65 * rms_norm + 0.35 * onset_norm
 
-    min_distance = int((2.2 * sr) / hop_length)
+    min_distance = int((2.0 * sr) / hop_length)
     peaks, _ = find_peaks(
         combined,
-        height=float(np.percentile(combined, 70)),
+        height=float(np.percentile(combined, 68)),
         distance=max(1, min_distance),
-        prominence=0.10,
+        prominence=0.09,
     )
     peak_times = [round(float(librosa.frames_to_time(p, sr=sr, hop_length=hop_length)), 3) for p in peaks]
 
     tempo, _ = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr, hop_length=hop_length)
-    bpm_val = float(np.atleast_1d(tempo)[0]) if np.size(tempo) > 0 else 96.0
+    bpm_val = float(np.atleast_1d(tempo)[0]) if np.size(tempo) > 0 else 102.0
     if bpm_val < 70 or bpm_val > 135:
-        bpm_val = 96.0
+        bpm_val = 102.0
 
     return {
         "duration_sec": round(duration_sec, 3),
@@ -182,7 +196,7 @@ def main() -> None:
         json.dumps(transcript, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     (WORK_DIR / "beats.json").write_text(json.dumps(beats, indent=2), encoding="utf-8")
-    print(f"[analyze_audio] Done: {beats['duration_sec']:.2f}s, {len(transcript['segments'])} segments.")
+    print(f"[analyze_audio] Done: {beats['duration_sec']:.2f}s, {len(transcript['words'])} words.")
 
 
 if __name__ == "__main__":

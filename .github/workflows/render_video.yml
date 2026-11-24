@@ -113,7 +113,7 @@ jobs:
           npm install --no-audit --no-fund
           npx remotion browser ensure
 
-      - name: Step 1 - Audio Clean & Whisper Timestamps
+      - name: Step 1 - Audio Clean & Word-Level Whisper Timestamps
         if: steps.check_input.outputs.has_input == 'true'
         env:
           INPUT_FOLDER: "input"
@@ -123,7 +123,7 @@ jobs:
         run: |
           python scripts/analyze_audio.py
 
-      - name: Step 2 - Gemini Unlimited Dynamic 3D Scene Coder & Self-Healer
+      - name: Step 2 - Gemini Multi-Part 3D & HUD Scene Coder
         if: steps.check_input.outputs.has_input == 'true'
         env:
           INPUT_FOLDER: "input"
@@ -133,7 +133,7 @@ jobs:
         run: |
           python scripts/generate_scenes.py
 
-      - name: Step 3 - Validate Uniqueness, Zero Text & Zero Hard Cuts
+      - name: Step 3 - Validate Uniqueness, Beats & Continuity
         if: steps.check_input.outputs.has_input == 'true'
         run: |
           python scripts/validate_scenes.py
@@ -209,7 +209,7 @@ jobs:
           npm install --no-audit --no-fund
           npx remotion browser ensure
 
-      - name: Render Silent 3D Chunk ${{ matrix.chunk.idx }}
+      - name: Render Silent 3D + HUD Chunk ${{ matrix.chunk.idx }}
         run: |
           mkdir -p out
           npx remotion render build_bundle Main out/chunk_${{ matrix.chunk.idx }}.mp4 \
@@ -221,7 +221,7 @@ jobs:
             --crf=22 \
             --x264-preset=veryfast \
             --image-format=jpeg \
-            --jpeg-quality=88 \
+            --jpeg-quality=90 \
             --gl=swangle
 
       - name: Upload Rendered Chunk ${{ matrix.chunk.idx }}

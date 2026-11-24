@@ -7,9 +7,41 @@ export interface DynamicSceneProps {
   accentHex: string;
 }
 
-export interface CameraWaypoint {
-  offset: V3;
+export interface HudCallout {
+  label: string;
+  anchorPct: [number, number];
+  boxPct: [number, number];
+}
+
+export interface StatCounter {
+  label: string;
+  fromVal: number;
+  toVal: number;
+  prefix?: string;
+  suffix?: string;
+  decimals?: number;
+}
+
+export interface VisualBeat {
+  id: string;
+  startSec: number;
+  endSec: number;
+  triggerSec: number;
+  cameraOffset: V3;
   lookOffset: V3;
+  callouts: HudCallout[];
+  statCounter: StatCounter | null;
+}
+
+export interface SubtitleWord {
+  text: string;
+  highlight: boolean;
+}
+
+export interface SubtitleChunk {
+  startSec: number;
+  endSec: number;
+  words: SubtitleWord[];
 }
 
 export interface DocumentaryScene {
@@ -22,7 +54,7 @@ export interface DocumentaryScene {
   worldPos: V3;
   bgHex: string;
   accentHex: string;
-  cameraWaypoints: CameraWaypoint[];
+  beats: VisualBeat[];
 }
 
 export interface DocumentaryPlan {
@@ -34,5 +66,6 @@ export interface DocumentaryPlan {
   hasAudio: boolean;
   bpm: number;
   emphasisPeaksSec: number[];
+  subtitleChunks: SubtitleChunk[];
   scenes: DocumentaryScene[];
 }

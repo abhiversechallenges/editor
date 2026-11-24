@@ -1,8 +1,1 @@
 # Upload your X-second Short voiceover.mp3 + visuals.txt inside input_short/ for a 9:16 (1080x1920) Short!
-# Your FULL uploaded Short voiceover (with your custom hook) is used untouched from start to finish.
-
-Example:
-Look & Mood: High-contrast dark nuclear steel aesthetic with glowing Cherenkov blue and electric amber accents.
-- Hook (first 4s): Fast dramatic orbit around a vertical Small Modular Nuclear Reactor steel dome splitting open to reveal the glowing blue core inside.
-- Middle: Dive vertically down along oscillating uranium fuel rods and upward-streaming coolant pipes driving a spinning multi-stage turbine tower.
-- Climax & Ending: Pull out into glowing high-voltage transmission pylons feeding bright energy pulses directly into a towering AI server stack.

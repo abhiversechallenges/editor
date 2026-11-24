@@ -1,9 +1,2 @@
 # Upload your long voiceover.mp3 + visuals.txt inside input/ for a 16:9 (1920x1080) video!
-# Describe the look (colors, lighting mood) and the exact elements/cutaways you want.
-
-Example:
-Look & Mood: Deep obsidian dark studio with glowing cyan and warm amber highlights.
-- Opening: Start wide outside a massive AI data center campus; smoothly lift the roof off and dive into a glowing server rack aisle.
-- Next: Pull a single GPU blade out in exploded view showing copper heatpipes and 8 glowing GPU chips.
-- Next: Zoom into a silicon die overheating fiery red with rising heat plumes, then clamp a dual-loop cold plate turning hot orange fluid into cyan streams.
-- Next: Follow pipes outside to cutaway hyperbolic cooling towers spinning fans with rising vapor clouds.
+# Mention hardware parts, stats/numbers you want called out on the HUD, and visual flow.

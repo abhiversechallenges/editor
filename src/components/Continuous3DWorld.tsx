@@ -20,31 +20,38 @@ function sampleSceneCamera(
   frame: number,
   isVertical: boolean
 ): { pos: [number, number, number]; look: [number, number, number] } {
-  const dur = Math.max(0.1, scene.endSec - scene.startSec);
-  const u = Math.max(0, Math.min(1, (tSec - scene.startSec) / dur));
-  const wps = scene.cameraWaypoints;
-  const segCount = Math.max(1, wps.length - 1);
-  const scaled = u * segCount;
-  const segIdx = Math.min(segCount - 1, Math.floor(scaled));
-  const localT = smoothstep(0, 1, scaled - segIdx);
+  const beats = scene.beats;
+  if (!beats || beats.length === 0) {
+    return {
+      pos: [scene.worldPos[0] + 5, scene.worldPos[1] + 2.8, scene.worldPos[2] + 5.8],
+      look: scene.worldPos,
+    };
+  }
 
-  const wpA = wps[segIdx];
-  const wpB = wps[Math.min(wps.length - 1, segIdx + 1)];
+  let bIdx = beats.findIndex((b) => tSec >= b.startSec && tSec <= b.endSec);
+  if (bIdx === -1) bIdx = beats.length - 1;
 
-  const driftX = Math.sin(frame * 0.014) * 0.16;
-  const driftY = Math.cos(frame * 0.011) * 0.09;
+  const currBeat = beats[bIdx];
+  const nextBeat = beats[Math.min(beats.length - 1, bIdx + 1)];
+  const bDur = Math.max(0.1, currBeat.endSec - currBeat.startSec);
+  const localU = Math.max(0, Math.min(1, (tSec - currBeat.startSec) / bDur));
+  // Smoothly sweep between current beat camera and next beat camera during the second half of the beat
+  const glideU = smoothstep(0.15, 0.95, localU);
+
+  const driftX = Math.sin(frame * 0.02) * 0.14;
+  const driftY = Math.cos(frame * 0.016) * 0.08;
   const pull = isVertical ? 1.16 : 1.0;
 
   return {
     pos: [
-      scene.worldPos[0] + lerp(wpA.offset[0], wpB.offset[0], localT) * pull + driftX,
-      scene.worldPos[1] + lerp(wpA.offset[1], wpB.offset[1], localT) + driftY,
-      scene.worldPos[2] + lerp(wpA.offset[2], wpB.offset[2], localT) * pull,
+      scene.worldPos[0] + lerp(currBeat.cameraOffset[0], nextBeat.cameraOffset[0], glideU) * pull + driftX,
+      scene.worldPos[1] + lerp(currBeat.cameraOffset[1], nextBeat.cameraOffset[1], glideU) + driftY,
+      scene.worldPos[2] + lerp(currBeat.cameraOffset[2], nextBeat.cameraOffset[2], glideU) * pull,
     ],
     look: [
-      scene.worldPos[0] + lerp(wpA.lookOffset[0], wpB.lookOffset[0], localT),
-      scene.worldPos[1] + lerp(wpA.lookOffset[1], wpB.lookOffset[1], localT),
-      scene.worldPos[2] + lerp(wpA.lookOffset[2], wpB.lookOffset[2], localT),
+      scene.worldPos[0] + lerp(currBeat.lookOffset[0], nextBeat.lookOffset[0], glideU),
+      scene.worldPos[1] + lerp(currBeat.lookOffset[1], nextBeat.lookOffset[1], glideU),
+      scene.worldPos[2] + lerp(currBeat.lookOffset[2], nextBeat.lookOffset[2], glideU),
     ],
   };
 }
@@ -64,7 +71,7 @@ function computeContinuousCamera(
 ): CameraState {
   const scenes = plan.scenes;
   if (scenes.length === 0) {
-    return { camPos: [0, 2, 7], lookAt: [0, 0, 0], bgHex: "#08101E", accentHex: "#22D3EE" };
+    return { camPos: [0, 2, 7], lookAt: [0, 0, 0], bgHex: "#0E1729", accentHex: "#22D3EE" };
   }
 
   let activeIdx = scenes.findIndex((s) => tSec >= s.startSec && tSec <= s.endSec);
@@ -72,7 +79,7 @@ function computeContinuousCamera(
 
   const current = scenes[activeIdx];
   const currSample = sampleSceneCamera(current, tSec, frame, isVertical);
-  const halfWin = isVertical ? 0.9 : 1.15;
+  const halfWin = isVertical ? 0.75 : 0.95;
 
   if (activeIdx < scenes.length - 1) {
     const distToEnd = current.endSec - tSec;
@@ -146,18 +153,17 @@ const CameraController: React.FC<{ camPos: [number, number, number]; lookAt: [nu
   return null;
 };
 
-const AmbientParticleField: React.FC<{
+const SubtleDustField: React.FC<{
   camPos: [number, number, number];
   accentHex: string;
   frame: number;
 }> = ({ camPos, accentHex, frame }) => {
   const seeds = useMemo(
     () =>
-      Array.from({ length: 65 }).map((_, i) => ({
+      Array.from({ length: 24 }).map((_, i) => ({
         x: ((i * 7.31) % 24) - 12,
         y: ((i * 5.17) % 14) - 7,
         z: ((i * 11.43) % 24) - 12,
-        size: 0.024 + (i % 4) * 0.01,
       })),
     []
   );
@@ -178,8 +184,8 @@ const AmbientParticleField: React.FC<{
             wrap(s.z, camPos[2], 24),
           ]}
         >
-          <sphereGeometry args={[s.size, 6, 6]} />
-          <meshStandardMaterial color={accentHex} emissive={accentHex} emissiveIntensity={1.5} />
+          <sphereGeometry args={[0.015, 6, 6]} />
+          <meshStandardMaterial color={accentHex} emissive={accentHex} emissiveIntensity={1.1} />
         </mesh>
       ))}
     </group>
@@ -194,7 +200,7 @@ export const Continuous3DWorld: React.FC<{ plan: DocumentaryPlan }> = ({ plan })
 
   const camState = computeContinuousCamera(plan, tSec, frame, isVertical);
   const visibleScenes = plan.scenes.filter(
-    (s) => tSec >= s.startSec - 2.4 && tSec <= s.endSec + 2.4
+    (s) => tSec >= s.startSec - 2.2 && tSec <= s.endSec + 2.2
   );
 
   return (
@@ -205,23 +211,29 @@ export const Continuous3DWorld: React.FC<{ plan: DocumentaryPlan }> = ({ plan })
       gl={{ antialias: true, powerPreference: "high-performance" }}
     >
       <color attach="background" args={[camState.bgHex]} />
-      <fog attach="fog" args={[camState.bgHex, 8.5, 19.5]} />
+      <fog attach="fog" args={[camState.bgHex, 9.5, 20.5]} />
 
       <CameraController camPos={camState.camPos} lookAt={camState.lookAt} />
 
-      <ambientLight intensity={0.7} />
+      {/* 3-Point Studio + Hemisphere Lighting so every wall, fin & edge pops cleanly */}
+      <hemisphereLight args={["#CBD5E1", "#23324A", 1.15]} />
       <directionalLight
-        position={[camState.camPos[0] + 6, camState.camPos[1] + 9, camState.camPos[2] + 5]}
-        intensity={1.7}
-        color="#F8FAFC"
+        position={[camState.camPos[0] + 8, camState.camPos[1] + 12, camState.camPos[2] + 7]}
+        intensity={2.1}
+        color="#FFFFFF"
+      />
+      <directionalLight
+        position={[camState.camPos[0] - 9, camState.camPos[1] + 5, camState.camPos[2] - 8]}
+        intensity={1.45}
+        color="#7DD3FC"
       />
       <pointLight
-        position={[camState.lookAt[0] - 4, camState.lookAt[1] + 3, camState.lookAt[2] + 2]}
-        intensity={1.45}
+        position={[camState.lookAt[0] - 3.5, camState.lookAt[1] + 3, camState.lookAt[2] + 3]}
+        intensity={1.65}
         color={camState.accentHex}
       />
 
-      <AmbientParticleField camPos={camState.camPos} accentHex={camState.accentHex} frame={frame} />
+      <SubtleDustField camPos={camState.camPos} accentHex={camState.accentHex} frame={frame} />
 
       {visibleScenes.map((scene) => {
         const Comp = SCENE_REGISTRY[scene.id];

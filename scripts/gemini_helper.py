@@ -8,11 +8,8 @@ from google import genai
 from google.genai import types
 from google.genai.errors import APIError
 
-# Multi-pool Free Tier ladder (uses the exact same GEMINI_API_KEY):
-# (model_id, thinking_level_or_None, max_tokens, supports_json_mime)
 PRO_LADDER = [
     ("gemini-4-hydrogen", "high", 65536, True),
-    ("gemini-4-hydrogen", "low", 65536, True),
     ("gemini-3.8-flash", "low", 32768, True),
     ("gemini-3.6-flash", None, 32768, True),
     ("gemini-3.5-flash-lite", None, 32768, True),
@@ -21,13 +18,16 @@ PRO_LADDER = [
 ]
 
 FLASH_LADDER = [
-    ("gemini-4-hydrogen", "high", 65536, True),
     ("gemini-3.6-flash", None, 32768, True),
+    ("gemini-4-hydrogen", "high", 65536, True),
     ("gemini-3.5-flash-lite", None, 32768, True),
     ("gemini-3.1-flash-lite", None, 32768, True),
     ("gemini-3.8-flash", "low", 32768, True),
     ("gemma-4-31b-it", None, 8192, False),
 ]
+
+# Track models temporarily returning 503 during this process so later batches don't waste 10s each time
+_COOLDOWN_UNTIL: dict[str, float] = {}
 
 
 def get_client() -> genai.Client:
@@ -70,11 +70,13 @@ def generate_with_fallback(
     dead_models: set[str] = set()
     last_error: Optional[Exception] = None
 
-    # 2 full passes over the 7-model ladder with a 20s cooldown between passes for 503 spikes
     for pass_num in range(1, 3):
+        now = time.time()
         for model_name, thinking_lvl, cap, supports_json in ladder:
             key = f"{model_name}:{thinking_lvl}"
             if key in dead_models:
+                continue
+            if pass_num == 1 and _COOLDOWN_UNTIL.get(model_name, 0) > now:
                 continue
 
             config_kwargs: dict[str, Any] = {
@@ -87,7 +89,7 @@ def generate_with_fallback(
 
             final_contents = contents
             if json_mode and not supports_json and isinstance(contents, str):
-                final_contents = contents + "\n\nCRITICAL: Return ONLY valid raw JSON with no markdown or extra commentary."
+                final_contents = contents + "\n\nCRITICAL: Return ONLY valid raw JSON with no markdown fences."
 
             config = types.GenerateContentConfig(**config_kwargs)
 
@@ -113,19 +115,22 @@ def generate_with_fallback(
                     k in msg
                     for k in ("404", "403", "not found", "permission", "restricted", "limit: 0", "unsupported")
                 ):
-                    print(f"[gemini_helper] {model_name} unavailable on free key; skipping.", flush=True)
+                    print(f"[gemini_helper] {model_name} unavailable; skipping.", flush=True)
                     dead_models.add(key)
                     continue
-                print(f"[gemini_helper] {model_name} busy/rate-limited ({exc}); waiting 10s before next model...", flush=True)
-                time.sleep(10)
+                if "503" in msg or "unavailable" in msg:
+                    _COOLDOWN_UNTIL[model_name] = time.time() + 90.0
+                print(f"[gemini_helper] {model_name} busy ({exc}); switching...", flush=True)
+                time.sleep(5)
             except Exception as exc:
                 last_error = exc
-                print(f"[gemini_helper] {model_name} error ({exc}); waiting 6s...", flush=True)
-                time.sleep(6)
+                print(f"[gemini_helper] {model_name} error ({exc}); waiting 4s...", flush=True)
+                time.sleep(4)
 
         if pass_num == 1:
-            print("[gemini_helper] Pass 1 hit temporary demand spikes; cooling down 20s before Pass 2...", flush=True)
-            time.sleep(20)
+            _COOLDOWN_UNTIL.clear()
+            print("[gemini_helper] Pass 1 exhausted; cooling 18s before Pass 2...", flush=True)
+            time.sleep(18)
 
     raise RuntimeError(f"All Gemini/Gemma models failed. Last error: {last_error}")
 
