@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """
-InfraVerse Unlimited Dynamic 3D Factory (v2.2).
-Two effortless folders:
-  - input/        -> Automatic 16:9 Full HD (1920x1080, 30fps) using up to 6 parallel workers
-  - input_short/  -> Automatic 9:16 Full HD Vertical (1080x1920, 30fps) matching your exact
-                     X-second custom voiceover + custom look & elements description
+InfraVerse Unlimited Dynamic 3D Factory (v3.0 — Engineering HUD + CAD Edges + Multi-Part Hardware).
+Includes:
+  1. 3-point + Hemisphere studio lighting, lifted slate materials & native EdgesGeometry CAD outlines
+  2. Multi-part engineering hardware compounds (HardwareRack, FinnedHousing, PipeConduit, HeatSinkArray, GlassShell)
+  3. Crisp 2D Remotion HUD (SVG callout arrows, emphasis-synced animated stat counters, highlighted subtitles)
+  4. Forced 3-4s visual beats with distinct camera moves & mechanical cutaways (zero static holds)
+  5. Separate input/ (16:9 1080p) and input_short/ (9:16 1080x1920) workflows
 """
 
 import subprocess
@@ -40,9 +42,9 @@ FILES[".gitattributes"] = r'''
 FILES["package.json"] = r'''
 {
   "name": "infraverse-dynamic-3d-factory",
-  "version": "2.2.0",
+  "version": "3.0.0",
   "private": true,
-  "description": "Unlimited dynamic continuous 3D documentary & custom Shorts factory",
+  "description": "High-contrast CAD 3D + 2D Remotion HUD engineering documentary factory",
   "scripts": {
     "dev": "remotion studio src/index.ts",
     "build": "remotion bundle src/index.ts --public-dir public --out-dir build_bundle",
@@ -52,6 +54,7 @@ FILES["package.json"] = r'''
     "@react-three/drei": "9.120.4",
     "@react-three/fiber": "8.17.10",
     "@remotion/cli": "4.0.543",
+    "@remotion/google-fonts": "4.0.543",
     "@remotion/three": "4.0.543",
     "react": "18.3.1",
     "react-dom": "18.3.1",
@@ -59,8 +62,9 @@ FILES["package.json"] = r'''
     "three": "0.170.0"
   },
   "devDependencies": {
+    "@types/node": "22.13.0",
     "@types/react": "18.3.12",
-    "@types/react-dom": "18.3.12",
+    "@types/react-dom": "18.3.1",
     "@types/three": "0.170.0",
     "typescript": "5.6.3"
   }
@@ -68,7 +72,7 @@ FILES["package.json"] = r'''
 '''
 
 FILES["requirements.txt"] = r'''
-google-genai>=1.49.0
+google-genai>=2.30.0
 faster-whisper>=1.1.0
 librosa>=0.10.2
 soundfile>=0.12.1
@@ -99,7 +103,7 @@ FILES["remotion.config.ts"] = r'''
 import { Config } from "@remotion/cli/config";
 
 Config.setVideoImageFormat("jpeg");
-Config.setJpegQuality(88);
+Config.setJpegQuality(90);
 Config.setOffthreadVideoCacheSizeInBytes(1024 * 1024 * 1024);
 Config.setCodec("h264");
 Config.setPixelFormat("yuv420p");
@@ -107,25 +111,11 @@ Config.setPixelFormat("yuv420p");
 
 FILES["input/visuals_EXAMPLE.txt"] = r'''
 # Upload your long voiceover.mp3 + visuals.txt inside input/ for a 16:9 (1920x1080) video!
-# Describe the look (colors, lighting mood) and the exact elements/cutaways you want.
-
-Example:
-Look & Mood: Deep obsidian dark studio with glowing cyan and warm amber highlights.
-- Opening: Start wide outside a massive AI data center campus; smoothly lift the roof off and dive into a glowing server rack aisle.
-- Next: Pull a single GPU blade out in exploded view showing copper heatpipes and 8 glowing GPU chips.
-- Next: Zoom into a silicon die overheating fiery red with rising heat plumes, then clamp a dual-loop cold plate turning hot orange fluid into cyan streams.
-- Next: Follow pipes outside to cutaway hyperbolic cooling towers spinning fans with rising vapor clouds.
+# Mention hardware parts, stats/numbers you want called out on the HUD, and visual flow.
 '''
 
 FILES["input_short/visuals_EXAMPLE.txt"] = r'''
 # Upload your X-second Short voiceover.mp3 + visuals.txt inside input_short/ for a 9:16 (1080x1920) Short!
-# Your FULL uploaded Short voiceover (with your custom hook) is used untouched from start to finish.
-
-Example:
-Look & Mood: High-contrast dark nuclear steel aesthetic with glowing Cherenkov blue and electric amber accents.
-- Hook (first 4s): Fast dramatic orbit around a vertical Small Modular Nuclear Reactor steel dome splitting open to reveal the glowing blue core inside.
-- Middle: Dive vertically down along oscillating uranium fuel rods and upward-streaming coolant pipes driving a spinning multi-stage turbine tower.
-- Climax & Ending: Pull out into glowing high-voltage transmission pylons feeding bright energy pulses directly into a towering AI server stack.
 '''
 
 for gitkeep_rel in (
@@ -150,19 +140,26 @@ from google import genai
 from google.genai import types
 from google.genai.errors import APIError
 
-PRO_MODEL_CHAIN = [
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
-    "gemini-3.8-flash",
-    "gemini-3.5-flash",
+PRO_LADDER = [
+    ("gemini-4-hydrogen", "high", 65536, True),
+    ("gemini-3.8-flash", "low", 32768, True),
+    ("gemini-3.6-flash", None, 32768, True),
+    ("gemini-3.5-flash-lite", None, 32768, True),
+    ("gemini-3.1-flash-lite", None, 32768, True),
+    ("gemma-4-31b-it", None, 8192, False),
 ]
 
-FLASH_MODEL_CHAIN = [
-    "gemini-2.5-flash",
-    "gemini-3.8-flash",
-    "gemini-3.5-flash",
-    "gemini-2.5-pro",
+FLASH_LADDER = [
+    ("gemini-3.6-flash", None, 32768, True),
+    ("gemini-4-hydrogen", "high", 65536, True),
+    ("gemini-3.5-flash-lite", None, 32768, True),
+    ("gemini-3.1-flash-lite", None, 32768, True),
+    ("gemini-3.8-flash", "low", 32768, True),
+    ("gemma-4-31b-it", None, 8192, False),
 ]
+
+# Track models temporarily returning 503 during this process so later batches don't waste 10s each time
+_COOLDOWN_UNTIL: dict[str, float] = {}
 
 
 def get_client() -> genai.Client:
@@ -171,7 +168,10 @@ def get_client() -> genai.Client:
         raise RuntimeError(
             "Missing GEMINI_API_KEY secret. Add it in GitHub Repo -> Settings -> Secrets -> Actions."
         )
-    return genai.Client(api_key=api_key)
+    return genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(timeout=600_000),
+    )
 
 
 def clean_json_text(raw: str) -> str:
@@ -195,48 +195,76 @@ def generate_with_fallback(
     contents: Any,
     role: str = "flash",
     json_mode: bool = False,
-    max_output_tokens: int = 32768,
+    max_output_tokens: int = 65536,
     temperature: float = 0.4,
 ) -> str:
-    models = PRO_MODEL_CHAIN if role == "pro" else FLASH_MODEL_CHAIN
-    config_kwargs: dict[str, Any] = {
-        "temperature": temperature,
-        "max_output_tokens": max_output_tokens,
-    }
-    if json_mode:
-        config_kwargs["response_mime_type"] = "application/json"
-
-    config = types.GenerateContentConfig(**config_kwargs)
-
+    ladder = PRO_LADDER if role == "pro" else FLASH_LADDER
+    dead_models: set[str] = set()
     last_error: Optional[Exception] = None
-    for model_name in models:
-        for attempt in range(4):
+
+    for pass_num in range(1, 3):
+        now = time.time()
+        for model_name, thinking_lvl, cap, supports_json in ladder:
+            key = f"{model_name}:{thinking_lvl}"
+            if key in dead_models:
+                continue
+            if pass_num == 1 and _COOLDOWN_UNTIL.get(model_name, 0) > now:
+                continue
+
+            config_kwargs: dict[str, Any] = {
+                "max_output_tokens": min(cap, max_output_tokens) if cap < 65536 else cap,
+            }
+            if thinking_lvl:
+                config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_level=thinking_lvl)
+            if json_mode and supports_json:
+                config_kwargs["response_mime_type"] = "application/json"
+
+            final_contents = contents
+            if json_mode and not supports_json and isinstance(contents, str):
+                final_contents = contents + "\n\nCRITICAL: Return ONLY valid raw JSON with no markdown fences."
+
+            config = types.GenerateContentConfig(**config_kwargs)
+
             try:
+                print(
+                    f"[gemini_helper] Pass {pass_num} -> {model_name} (thinking={thinking_lvl or 'off'})...",
+                    flush=True,
+                )
                 response = client.models.generate_content(
                     model=model_name,
-                    contents=contents,
+                    contents=final_contents,
                     config=config,
                 )
                 text = response.text or ""
                 if not text.strip():
                     raise RuntimeError(f"Empty response from {model_name}")
+                print(f"[gemini_helper] Success with {model_name} ({len(text)} chars).", flush=True)
                 return clean_json_text(text) if json_mode else text
             except APIError as exc:
                 last_error = exc
                 msg = str(exc).lower()
-                if any(k in msg for k in ("404", "403", "not found", "permission", "restricted")):
-                    print(f"[gemini_helper] {model_name} unavailable ({exc}); switching model...")
-                    break
-                wait_sec = 8 * (2 ** attempt)
-                print(f"[gemini_helper] {model_name} rate/transient error ({exc}); retrying in {wait_sec}s...")
-                time.sleep(wait_sec)
+                if any(
+                    k in msg
+                    for k in ("404", "403", "not found", "permission", "restricted", "limit: 0", "unsupported")
+                ):
+                    print(f"[gemini_helper] {model_name} unavailable; skipping.", flush=True)
+                    dead_models.add(key)
+                    continue
+                if "503" in msg or "unavailable" in msg:
+                    _COOLDOWN_UNTIL[model_name] = time.time() + 90.0
+                print(f"[gemini_helper] {model_name} busy ({exc}); switching...", flush=True)
+                time.sleep(5)
             except Exception as exc:
                 last_error = exc
-                wait_sec = 5 * (2 ** attempt)
-                print(f"[gemini_helper] {model_name} error ({exc}); retrying in {wait_sec}s...")
-                time.sleep(wait_sec)
+                print(f"[gemini_helper] {model_name} error ({exc}); waiting 4s...", flush=True)
+                time.sleep(4)
 
-    raise RuntimeError(f"All Gemini models failed. Last error: {last_error}")
+        if pass_num == 1:
+            _COOLDOWN_UNTIL.clear()
+            print("[gemini_helper] Pass 1 exhausted; cooling 18s before Pass 2...", flush=True)
+            time.sleep(18)
+
+    raise RuntimeError(f"All Gemini/Gemma models failed. Last error: {last_error}")
 
 
 def parse_json_strict(raw: str) -> Any:
@@ -342,18 +370,31 @@ def transcribe_audio(wav_path: Path) -> Dict[str, Any]:
         initial_prompt=(
             "AI supercluster, Nvidia GPU, NVLink, InfiniBand, liquid cooling, cold plate, "
             "data center, nuclear SMR, small modular reactor, substation, transformer, "
-            "power grid, subsea fiber optic cable, megawatt, gigawatt, battery farm, blackout."
+            "345 kV, 600 kW, 1,000 MW, CDU, subsea fiber optic cable, battery farm, blackout."
         ),
     )
 
     segments: List[Dict[str, Any]] = []
+    words: List[Dict[str, Any]] = []
     for seg in segments_iter:
+        seg_words: List[Dict[str, Any]] = []
+        if seg.words:
+            for w in seg.words:
+                w_item = {
+                    "word": w.word.strip(),
+                    "start": round(float(w.start), 3),
+                    "end": round(float(w.end), 3),
+                }
+                if w_item["word"]:
+                    words.append(w_item)
+                    seg_words.append(w_item)
         segments.append(
             {
                 "id": seg.id,
                 "start": round(float(seg.start), 3),
                 "end": round(float(seg.end), 3),
                 "text": seg.text.strip(),
+                "words": seg_words,
             }
         )
 
@@ -361,6 +402,7 @@ def transcribe_audio(wav_path: Path) -> Dict[str, Any]:
         "language": info.language,
         "duration_sec": round(float(info.duration), 3),
         "segments": segments,
+        "words": words,
         "full_text": " ".join(s["text"] for s in segments),
     }
 
@@ -378,19 +420,19 @@ def analyze_beats(wav_path: Path) -> Dict[str, Any]:
     onset_norm = onset_env / (np.max(onset_env) + 1e-8)
     combined = 0.65 * rms_norm + 0.35 * onset_norm
 
-    min_distance = int((2.2 * sr) / hop_length)
+    min_distance = int((2.0 * sr) / hop_length)
     peaks, _ = find_peaks(
         combined,
-        height=float(np.percentile(combined, 70)),
+        height=float(np.percentile(combined, 68)),
         distance=max(1, min_distance),
-        prominence=0.10,
+        prominence=0.09,
     )
     peak_times = [round(float(librosa.frames_to_time(p, sr=sr, hop_length=hop_length)), 3) for p in peaks]
 
     tempo, _ = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr, hop_length=hop_length)
-    bpm_val = float(np.atleast_1d(tempo)[0]) if np.size(tempo) > 0 else 96.0
+    bpm_val = float(np.atleast_1d(tempo)[0]) if np.size(tempo) > 0 else 102.0
     if bpm_val < 70 or bpm_val > 135:
-        bpm_val = 96.0
+        bpm_val = 102.0
 
     return {
         "duration_sec": round(duration_sec, 3),
@@ -428,7 +470,7 @@ def main() -> None:
         json.dumps(transcript, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     (WORK_DIR / "beats.json").write_text(json.dumps(beats, indent=2), encoding="utf-8")
-    print(f"[analyze_audio] Done: {beats['duration_sec']:.2f}s, {len(transcript['segments'])} segments.")
+    print(f"[analyze_audio] Done: {beats['duration_sec']:.2f}s, {len(transcript['words'])} words.")
 
 
 if __name__ == "__main__":
@@ -459,17 +501,27 @@ Available components in "../../components/StudioKit" (and ONLY these imports are
 import React from "react";
 import {
   MatteBox, MatteCylinder, MatteSphere, MatteTorus, MatteCone,
+  HardwareRack, FinnedHousing, PipeConduit, HeatSinkArray, GlassShell,
   SpinGroup, BobGroup, RevealSlideGroup, FlowStream, RisingParticles, OrbitRing, GlbModel
 } from "../../components/StudioKit";
 import type { DynamicSceneProps } from "../../types";
 
 Props Reference (type V3 = [number, number, number]):
 - DynamicSceneProps: { frame: number; localFrame: number; progress: number; accentHex: string }
-- MatteBox: { pos?: V3; rot?: V3; size?: V3; color?: string; emissive?: string; emissiveIntensity?: number; roughness?: number; metalness?: number; opacity?: number }
-- MatteCylinder: { pos?: V3; rot?: V3; radiusTop?: number; radiusBottom?: number; height?: number; segments?: number; openEnded?: boolean; thetaStart?: number; thetaLength?: number; doubleSide?: boolean; color?: string; emissive?: string; emissiveIntensity?: number }
+- MatteBox: { pos?: V3; rot?: V3; size?: V3; color?: string; emissive?: string; emissiveIntensity?: number; roughness?: number; metalness?: number; opacity?: number; edges?: boolean; edgeColor?: string }
+- MatteCylinder: { pos?: V3; rot?: V3; radiusTop?: number; radiusBottom?: number; height?: number; segments?: number; openEnded?: boolean; thetaStart?: number; thetaLength?: number; doubleSide?: boolean; color?: string; emissive?: string; emissiveIntensity?: number; edges?: boolean; edgeColor?: string }
 - MatteSphere: { pos?: V3; scale?: V3; radius?: number; color?: string; emissive?: string; emissiveIntensity?: number }
 - MatteTorus: { pos?: V3; rot?: V3; radius?: number; tube?: number; arc?: number; color?: string; emissive?: string; emissiveIntensity?: number }
-- MatteCone: { pos?: V3; rot?: V3; radius?: number; height?: number; segments?: number; color?: string; emissive?: string; emissiveIntensity?: number }
+- MatteCone: { pos?: V3; rot?: V3; radius?: number; height?: number; segments?: number; color?: string; emissive?: string; emissiveIntensity?: number; edges?: boolean; edgeColor?: string }
+- HardwareRack: { pos?: V3; rot?: V3; size?: V3; bays?: number; accentHex?: string; frame: number }
+  (Compound 10+ sub-part server/compute rack with CAD frame, vertical rails, recessed inner bay, individual blade trays, glowing status strips & top fan)
+- FinnedHousing: { pos?: V3; rot?: V3; radius?: number; height?: number; finCount?: number; color?: string; accentHex?: string; cutaway?: boolean; frame: number }
+  (Compound multi-part industrial vessel/reactor/turbine cylinder with bolted top/bottom flanges, radial cooling fins, translucent outer shell & glowing core)
+- PipeConduit: { points: V3[]; tubeRadius?: number; pipeColor?: string; fluidColor?: string; flangeCount?: number; count?: number; speed?: number; frame: number }
+  (Translucent cutaway conduit with bolted flange collars & bright fluid/energy capsules flowing INSIDE the pipe!)
+- HeatSinkArray: { pos?: V3; rot?: V3; size?: V3; finCount?: number; color?: string; pipeColor?: string; glowColor?: string }
+  (Machined baseplate + parallel CAD-edged cooling fins + twin copper heatpipes)
+- GlassShell: { pos?: V3; rot?: V3; shape?: "box"|"cylinder"; size?: V3; radius?: number; height?: number; color?: string; edgeColor?: string; opacity?: number }
 - SpinGroup: { pos?: V3; rot?: V3; axis?: "x"|"y"|"z"; speed?: number; frame: number; children?: React.ReactNode }
 - BobGroup: { pos?: V3; rot?: V3; axis?: "x"|"y"|"z"; amp?: number; speed?: number; phase?: number; frame: number; children?: React.ReactNode }
 - RevealSlideGroup: { startPos?: V3; endPos?: V3; startScale?: number; endScale?: number; progress: number; startAt?: number; endAt?: number; children?: React.ReactNode }
@@ -478,49 +530,65 @@ Props Reference (type V3 = [number, number, number]):
 - OrbitRing: { center?: V3; radius?: number; count?: number; size?: number; color?: string; speed?: number; tilt?: V3; frame: number }
 - GlbModel: { file: string; pos?: V3; rot?: V3; scale?: number; spinSpeed?: number; frame: number }
 
-STRICT CODE RULES:
+STRICT HARDWARE DETAIL & CONTRAST RULES:
 1. Export EXACTLY `export const Scene_XX: React.FC<DynamicSceneProps> = ({ frame, localFrame, progress, accentHex }) => { ... }`.
-2. NEVER import `three`, `@react-three/fiber`, `remotion`, `useFrame`, `useState`, `useEffect`, or `<Text>` / `<Html>`. Use ONLY `React`, `StudioKit`, `DynamicSceneProps`, and standard `<group>`.
-3. EVERY scene MUST have continuous internal motion + cutaway animation (`RevealSlideGroup`, `SpinGroup`, `FlowStream`, `RisingParticles`, `BobGroup`).
-4. ZERO text, zero labels, zero HTML overlays.
+2. NEVER import `three`, `@react-three/fiber`, `remotion`, `useFrame`, `useState`, `useEffect`, or `<Text>` / `<Html>`.
+3. READABLE CONTRAST: Use slate architectural colors (#2D3E58, #3B4E6B, #475569, #64748B, #CBD5E1, #D97706) paired with glowing `accentHex`, `#22D3EE`, `#F97316`, `#10B981`. Never use black-on-black materials.
+4. NO RAW SINGLE-CYLINDER OR RANDOM-DOT PLACEHOLDERS: Every hero object MUST combine 6-14 mechanical sub-parts (use HardwareRack, FinnedHousing, PipeConduit, HeatSinkArray, GlassShell, bolted flanges, ribs, fins, and multi-stage RevealSlideGroup cutaways!).
+5. Move energy/coolant packets cleanly inside visible `PipeConduit` or `FlowStream` tubes, NOT random scattered floating dots.
 """
 
 PALETTES = [
-    {"bgHex": "#08101E", "accentHex": "#22D3EE"},
-    {"bgHex": "#0A1424", "accentHex": "#38BDF8"},
-    {"bgHex": "#160D12", "accentHex": "#F97316"},
-    {"bgHex": "#07181E", "accentHex": "#06B6D4"},
-    {"bgHex": "#081426", "accentHex": "#60A5FA"},
-    {"bgHex": "#141009", "accentHex": "#F59E0B"},
-    {"bgHex": "#071915", "accentHex": "#10B981"},
-    {"bgHex": "#100D22", "accentHex": "#818CF8"},
+    {"bgHex": "#0E1729", "accentHex": "#22D3EE"},
+    {"bgHex": "#122038", "accentHex": "#38BDF8"},
+    {"bgHex": "#1D1319", "accentHex": "#F97316"},
+    {"bgHex": "#0F212B", "accentHex": "#06B6D4"},
+    {"bgHex": "#11223A", "accentHex": "#60A5FA"},
+    {"bgHex": "#1B1610", "accentHex": "#F59E0B"},
+    {"bgHex": "#0E2420", "accentHex": "#10B981"},
+    {"bgHex": "#16142E", "accentHex": "#818CF8"},
 ]
 
-DEFAULT_WAYPOINTS_16_9 = [
+BEAT_CAM_PRESETS_16_9 = [
     [
-        {"offset": [5.6, 3.0, 6.0], "lookOffset": [0.0, 0.2, 0.0]},
-        {"offset": [1.8, 1.5, 4.1], "lookOffset": [0.1, 0.1, 0.0]},
-        {"offset": [-3.2, 2.0, 4.5], "lookOffset": [-0.1, 0.0, 0.0]},
+        {"offset": [5.8, 3.1, 6.2], "lookOffset": [0.0, 0.2, 0.0]},
+        {"offset": [2.2, 1.6, 3.8], "lookOffset": [0.2, 0.15, 0.0]},
+        {"offset": [-3.4, 2.3, 4.2], "lookOffset": [-0.15, 0.05, 0.0]},
     ],
     [
-        {"offset": [-5.2, 2.7, 5.6], "lookOffset": [0.0, 0.1, 0.0]},
-        {"offset": [-1.2, 1.3, 3.6], "lookOffset": [0.0, 0.2, 0.0]},
-        {"offset": [3.5, 1.9, 4.4], "lookOffset": [0.1, 0.0, 0.0]},
+        {"offset": [-5.2, 2.8, 5.6], "lookOffset": [0.0, 0.15, 0.0]},
+        {"offset": [-1.3, 1.2, 3.4], "lookOffset": [0.0, 0.25, 0.0]},
+        {"offset": [3.8, 1.9, 4.1], "lookOffset": [0.1, 0.05, 0.0]},
+    ],
+    [
+        {"offset": [0.8, 4.4, 6.0], "lookOffset": [0.0, 0.0, 0.0]},
+        {"offset": [3.5, 1.5, 3.6], "lookOffset": [0.0, 0.2, 0.0]},
+        {"offset": [-2.2, 1.1, 3.5], "lookOffset": [0.0, 0.15, 0.0]},
     ],
 ]
 
-DEFAULT_WAYPOINTS_9_16 = [
+BEAT_CAM_PRESETS_9_16 = [
     [
-        {"offset": [4.4, 3.2, 6.4], "lookOffset": [0.0, 0.3, 0.0]},
-        {"offset": [1.2, 1.6, 4.6], "lookOffset": [0.0, 0.2, 0.0]},
-        {"offset": [-2.8, 2.2, 5.2], "lookOffset": [0.0, 0.1, 0.0]},
+        {"offset": [4.5, 3.2, 6.3], "lookOffset": [0.0, 0.3, 0.0]},
+        {"offset": [1.3, 1.7, 4.3], "lookOffset": [0.0, 0.25, 0.0]},
+        {"offset": [-2.9, 2.2, 4.9], "lookOffset": [0.0, 0.1, 0.0]},
     ],
     [
-        {"offset": [-4.2, 2.8, 6.2], "lookOffset": [0.0, 0.2, 0.0]},
-        {"offset": [-0.8, 1.4, 4.4], "lookOffset": [0.0, 0.3, 0.0]},
-        {"offset": [2.9, 2.1, 5.1], "lookOffset": [0.0, 0.1, 0.0]},
+        {"offset": [-4.2, 2.9, 6.1], "lookOffset": [0.0, 0.25, 0.0]},
+        {"offset": [-0.9, 1.4, 4.2], "lookOffset": [0.0, 0.3, 0.0]},
+        {"offset": [3.0, 2.0, 4.8], "lookOffset": [0.0, 0.1, 0.0]},
     ],
 ]
+
+HIGHLIGHT_KEYWORDS = {
+    "ai", "gpu", "gpus", "nvidia", "blackwell", "nvlink", "infiniband", "chip", "chips",
+    "silicon", "die", "liquid", "cooling", "coolant", "copper", "water", "watts", "megawatts",
+    "gigawatts", "mw", "kw", "gw", "kv", "nuclear", "reactor", "reactors", "smr", "uranium",
+    "substation", "substations", "transformer", "transformers", "grid", "blackout", "battery",
+    "batteries", "megapack", "fiber", "subsea", "cable", "cables", "heat", "thermal",
+    "overheat", "overheats", "billion", "hundred", "thousand", "trillions", "data", "center",
+    "supercluster", "power", "electricity", "cooling", "towers", "manifolds", "turbine",
+}
 
 FORBIDDEN_CODE_PATTERNS = (
     "<Text",
@@ -577,27 +645,25 @@ def discover_custom_models() -> List[str]:
 
 def compute_scene_range(duration_sec: float, is_short: bool) -> tuple[int, int]:
     if is_short:
-        if duration_sec <= 20:
-            return 3, 4
-        if duration_sec <= 38:
-            return 4, 6
-        if duration_sec <= 65:
-            return 6, 9
-        return 8, 12
+        if duration_sec <= 22:
+            return 3, 5
+        if duration_sec <= 40:
+            return 5, 7
+        return 7, 10
     if duration_sec <= 25:
-        return 2, 3
-    if duration_sec <= 60:
-        return 4, 6
-    if duration_sec <= 180:
-        return 8, 14
+        return 3, 4
+    if duration_sec <= 65:
+        return 6, 9
+    if duration_sec <= 150:
+        return 13, 17
     if duration_sec <= 360:
-        return 16, 26
-    return 28, 42
+        return 22, 32
+    return 36, 48
 
 
 def snap_to_peak(target: float, peaks: List[float], min_val: float, max_val: float) -> float:
     best = target
-    best_dist = 0.65
+    best_dist = 0.55
     for p in peaks:
         d = abs(p - target)
         if d <= best_dist and min_val < p < max_val:
@@ -612,60 +678,98 @@ def sanitize_hex(val: Any, fallback: str) -> str:
     return fallback
 
 
+def build_subtitle_chunks(words: List[Dict[str, Any]], total_dur: float) -> List[Dict[str, Any]]:
+    chunks: List[Dict[str, Any]] = []
+    if not words:
+        return chunks
+
+    buf: List[Dict[str, Any]] = []
+    for w in words:
+        text = str(w.get("word", "")).strip()
+        if not text:
+            continue
+        buf.append({"word": text, "start": float(w["start"]), "end": float(w["end"])})
+        ends_sentence = text.endswith((".", "!", "?", ","))
+        if len(buf) >= 4 or (len(buf) >= 2 and ends_sentence):
+            c_start = buf[0]["start"]
+            c_end = min(total_dur, buf[-1]["end"] + 0.12)
+            chunk_words = []
+            for item in buf:
+                clean_tok = re.sub(r"[^a-z0-9$%]", "", item["word"].lower())
+                is_hi = bool(re.search(r"\d", clean_tok)) or clean_tok in HIGHLIGHT_KEYWORDS
+                chunk_words.append({"text": item["word"], "highlight": is_hi})
+            chunks.append({"startSec": round(c_start, 3), "endSec": round(c_end, 3), "words": chunk_words})
+            buf = []
+
+    if buf:
+        chunk_words = []
+        for item in buf:
+            clean_tok = re.sub(r"[^a-z0-9$%]", "", item["word"].lower())
+            is_hi = bool(re.search(r"\d", clean_tok)) or clean_tok in HIGHLIGHT_KEYWORDS
+            chunk_words.append({"text": item["word"], "highlight": is_hi})
+        chunks.append(
+            {
+                "startSec": round(buf[0]["start"], 3),
+                "endSec": round(min(total_dur, buf[-1]["end"] + 0.2), 3),
+                "words": chunk_words,
+            }
+        )
+    return chunks
+
+
 def build_safe_fallback_scene_tsx(scene_num: int, accent_hex: str, title: str) -> str:
     variant = scene_num % 4
     safe_comment = re.sub(r"[^A-Za-z0-9 ,.-]", "", title)[:60]
     if variant == 0:
         body = f"""
-      <MatteBox pos={{[0, -0.8, 0]}} size={{[4.2, 0.2, 3.4]}} color="#141E2E" />
-      <RevealSlideGroup startPos={{[0, 0, 0]}} endPos={{[0, 1.45, 0]}} progress={{progress}} startAt={{0.2}} endAt={{0.65}}>
-        <MatteBox pos={{[0, 0.3, 0]}} size={{[2.8, 0.35, 2.0]}} color="#334155" />
+      <MatteBox pos={{[0, -0.95, 0]}} size={{[5.2, 0.22, 3.8]}} color="#2B3B52" />
+      <HardwareRack pos={{[-1.3, 0.15, 0]}} size={{[1.1, 2.0, 1.1]}} bays={{6}} accentHex={{"{accent_hex}"}} frame={{frame}} />
+      <HardwareRack pos={{[1.3, 0.15, 0]}} size={{[1.1, 2.0, 1.1]}} bays={{6}} accentHex={{"{accent_hex}"}} frame={{frame}} />
+      <RevealSlideGroup startPos={{[0, 0, 0]}} endPos={{[0, 1.25, 0]}} progress={{progress}} startAt={{0.2}} endAt={{0.65}}>
+        <HeatSinkArray pos={{[0, 0.3, 0]}} size={{[1.6, 0.65, 1.4]}} finCount={{7}} color="#64748B" glowColor={{"{accent_hex}"}} />
       </RevealSlideGroup>
-      <SpinGroup pos={{[0, -0.1, 0]}} axis="y" speed={{0.9}} frame={{frame}}>
-        <MatteCylinder pos={{[0, 0, 0]}} radiusTop={{0.7}} radiusBottom={{0.9}} height={{1.2}} color="#1E293B" />
-        <MatteCylinder pos={{[0, 0.1, 0]}} radiusTop={{0.42}} radiusBottom={{0.42}} height={{1.3}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.6}} />
-      </SpinGroup>
-      <FlowStream points={{[[-2.0, 0.2, -0.8], [-0.7, 0.4, -0.2], [0.7, 0.4, 0.2], [2.0, 0.2, 0.8]]}} tubeColor="#1E293B" particleColor={{"{accent_hex}"}} count={{6}} speed={{0.7}} frame={{frame}} />"""
+      <PipeConduit points={{[[-1.3, 0.4, 0.6], [-0.4, 0.1, 0.9], [0.4, 0.1, 0.9], [1.3, 0.4, 0.6]]}} fluidColor={{"{accent_hex}"}} flangeCount={{3}} speed={{0.8}} frame={{frame}} />"""
     elif variant == 1:
         body = f"""
-      <MatteBox pos={{[0, -0.9, 0]}} size={{[4.0, 0.18, 3.2]}} color="#0F172A" />
-      <BobGroup pos={{[0, 0.2, 0]}} axis="y" amp={{0.15}} speed={{1.5}} frame={{frame}}>
-        <MatteTorus pos={{[0, 0, 0]}} radius={{1.15}} tube={{0.15}} color="#334155" />
-        <MatteTorus pos={{[0, 0, 0]}} rot={{[1.57, 0, 0]}} radius={{0.88}} tube={{0.09}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.7}} />
-      </BobGroup>
-      <OrbitRing center={{[0, 0.2, 0]}} radius={{1.65}} count={{8}} size={{0.1}} color={{"{accent_hex}"}} speed={{0.9}} frame={{frame}} />
-      <RisingParticles origin={{[0, -0.7, 0]}} spread={{1.0}} height={{2.5}} count={{12}} color={{"{accent_hex}"}} frame={{frame}} />"""
+      <MatteBox pos={{[0, -0.95, 0]}} size={{[4.8, 0.22, 3.8]}} color="#2D3E58" />
+      <FinnedHousing pos={{[0, 0.15, 0]}} radius={{1.05}} height={{2.0}} finCount={{8}} color="#3B4E6B" accentHex={{"{accent_hex}"}} cutaway={{true}} frame={{frame}} />
+      <RevealSlideGroup startPos={{[0, 0, 0]}} endPos={{[0, 1.1, 0]}} progress={{progress}} startAt={{0.15}} endAt={{0.6}}>
+        <SpinGroup pos={{[0, 0.15, 0]}} axis="y" speed={{2.4}} frame={{frame}}>
+          <MatteCylinder pos={{[0, 0, 0]}} radiusTop={{0.42}} radiusBottom={{0.42}} height={{1.6}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.7}} />
+        </SpinGroup>
+      </RevealSlideGroup>
+      <PipeConduit points={{[[-2.4, -0.3, 0], [-1.05, 0.1, 0], [1.05, 0.1, 0], [2.4, 0.7, 0]]}} fluidColor={{"{accent_hex}"}} flangeCount={{4}} speed={{0.9}} frame={{frame}} />"""
     elif variant == 2:
         body = f"""
-      <MatteBox pos={{[0, -0.85, 0]}} size={{[3.8, 0.2, 3.8]}} color="#182234" />
-      <RevealSlideGroup startPos={{[0, 0, 0]}} endPos={{[1.0, 0.9, 0]}} progress={{progress}} startAt={{0.15}} endAt={{0.6}}>
-        <MatteCylinder pos={{[0, 0.2, 0]}} radiusTop={{1.0}} radiusBottom={{1.0}} height={{1.9}} thetaLength={{4.2}} doubleSide={{true}} color="#475569" />
+      <MatteBox pos={{[0, -0.95, 0]}} size={{[4.6, 0.22, 4.2]}} color="#2B3B52" />
+      <GlassShell pos={{[0, 0.25, 0]}} shape="box" size={{[2.6, 1.9, 2.2]}} color="#38BDF8" edgeColor={{"{accent_hex}"}} opacity={{0.22}} />
+      <RevealSlideGroup startPos={{[0, 0, 0]}} endPos={{[0, 0.9, 0]}} progress={{progress}} startAt={{0.2}} endAt={{0.65}}>
+        <HeatSinkArray pos={{[0, 0.1, 0]}} size={{[1.8, 0.6, 1.5]}} finCount={{8}} color="#D97706" glowColor={{"{accent_hex}"}} />
       </RevealSlideGroup>
-      <SpinGroup pos={{[0, 0.2, 0]}} axis="y" speed={{1.8}} frame={{frame}}>
-        <MatteBox pos={{[0, 0, 0]}} size={{[1.45, 0.22, 0.28]}} color="#CBD5E1" />
-        <MatteBox pos={{[0, 0, 0]}} size={{[0.28, 0.22, 1.45]}} color="#CBD5E1" />
-        <MatteSphere pos={{[0, 0.45, 0]}} radius={{0.36}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.9}} />
-      </SpinGroup>"""
+      <SpinGroup pos={{[0, 0.45, 0]}} axis="y" speed={{1.9}} frame={{frame}}>
+        <MatteTorus pos={{[0, 0, 0]}} rot={{[1.57, 0, 0]}} radius={{1.4}} tube={{0.07}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} />
+      </SpinGroup>
+      <PipeConduit points={{[[-2.2, 0.8, 0.4], [-0.9, 0.1, 0.4], [0.9, 0.1, -0.4], [2.2, 0.8, -0.4]]}} fluidColor="#F97316" flangeCount={{4}} speed={{0.85}} frame={{frame}} />"""
     else:
         body = f"""
-      <MatteBox pos={{[0, -0.85, 0]}} size={{[4.4, 0.2, 3.0]}} color="#141C2B" />
-      <FlowStream points={{[[-2.0, 0.9, 0], [-0.9, 0.1, 0.3], [0.9, 0.1, -0.3], [2.0, 0.9, 0]]}} tubeColor="#334155" particleColor={{"{accent_hex}"}} count={{7}} speed={{0.85}} frame={{frame}} />
-      <BobGroup pos={{[-1.3, 0.0, 0]}} axis="y" amp={{0.18}} speed={{1.6}} frame={{frame}}>
-        <MatteBox size={{[0.8, 1.35, 0.8]}} color="#243146" />
+      <MatteBox pos={{[0, -0.95, 0]}} size={{[5.4, 0.22, 3.4]}} color="#2D3E58" />
+      <BobGroup pos={{[-1.6, 0.1, 0]}} axis="y" amp={{0.12}} speed={{1.5}} frame={{frame}}>
+        <FinnedHousing pos={{[0, 0, 0]}} radius={{0.72}} height={{1.6}} finCount={{6}} color="#475569" accentHex={{"{accent_hex}"}} frame={{frame}} />
       </BobGroup>
-      <BobGroup pos={{[1.3, 0.0, 0]}} axis="y" amp={{0.18}} speed={{1.6}} phase={{1.5}} frame={{frame}}>
-        <MatteBox size={{[0.8, 1.35, 0.8]}} color="#243146" />
+      <BobGroup pos={{[1.6, 0.1, 0]}} axis="y" amp={{0.12}} speed={{1.5}} phase={{1.5}} frame={{frame}}>
+        <FinnedHousing pos={{[0, 0, 0]}} radius={{0.72}} height={{1.6}} finCount={{6}} color="#475569" accentHex={{"{accent_hex}"}} frame={{frame}} />
       </BobGroup>
-      <MatteCylinder pos={{[0, 0.1, 0]}} radiusTop={{0.42}} radiusBottom={{0.52}} height={{1.6}} color={{"{accent_hex}"}} emissive={{"{accent_hex}"}} emissiveIntensity={{1.4}} />"""
+      <PipeConduit points={{[[-1.6, 0.8, 0], [-0.6, 1.2, 0.3], [0.6, 1.2, -0.3], [1.6, 0.8, 0]]}} fluidColor={{"{accent_hex}"}} flangeCount={{4}} speed={{0.95}} frame={{frame}} />"""
 
     return f"""import React from "react";
 import {{
-  MatteBox, MatteCylinder, MatteSphere, MatteTorus,
-  SpinGroup, BobGroup, RevealSlideGroup, FlowStream, RisingParticles, OrbitRing
+  MatteBox, MatteCylinder, MatteTorus,
+  HardwareRack, FinnedHousing, PipeConduit, HeatSinkArray, GlassShell,
+  SpinGroup, BobGroup, RevealSlideGroup
 }} from "../../components/StudioKit";
 import type {{ DynamicSceneProps }} from "../../types";
 
-// Fallback scene: {safe_comment}
+// Multi-part fallback: {safe_comment}
 export const Scene_{scene_num:02d}: React.FC<DynamicSceneProps> = ({{ frame, progress }}) => {{
   return (
     <group>{body}
@@ -705,11 +809,60 @@ def sanitize_scene_tsx(code: str, scene_num: int) -> str:
     return txt.strip() + "\n"
 
 
+def normalize_callouts(raw_callouts: Any, is_short: bool) -> List[Dict[str, Any]]:
+    if not isinstance(raw_callouts, list):
+        return []
+    clean: List[Dict[str, Any]] = []
+    for ci, item in enumerate(raw_callouts[:2]):
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip().upper()[:28]
+        if not label:
+            continue
+        anc = item.get("anchorPct")
+        box = item.get("boxPct")
+        if not (isinstance(anc, list) and len(anc) == 2):
+            anc = [50, 48] if ci == 0 else [45, 58]
+        if not (isinstance(box, list) and len(box) == 2):
+            box = [70, 22] if not is_short else [60, 22]
+        # Clamp safely away from top-left stat counter and bottom subtitles
+        ax = round(min(78.0, max(22.0, float(anc[0]))), 1)
+        ay = round(min(72.0, max(24.0, float(anc[1]))), 1)
+        bx = round(min(82.0, max(16.0, float(box[0]))), 1)
+        by = round(min(72.0, max(18.0, float(box[1]))), 1)
+        if bx < 36 and by < 32:
+            bx = 68.0
+        clean.append({"label": label, "anchorPct": [ax, ay], "boxPct": [bx, by]})
+    return clean
+
+
+def normalize_stat_counter(raw_stat: Any) -> Any:
+    if not isinstance(raw_stat, dict):
+        return None
+    label = str(raw_stat.get("label") or "").strip().upper()[:26]
+    if not label:
+        return None
+    try:
+        from_val = float(raw_stat.get("fromVal", 0))
+        to_val = float(raw_stat.get("toVal", 100))
+    except Exception:
+        return None
+    return {
+        "label": label,
+        "fromVal": from_val,
+        "toVal": to_val,
+        "prefix": str(raw_stat.get("prefix") or "")[:6],
+        "suffix": str(raw_stat.get("suffix") or "")[:10],
+        "decimals": max(0, min(2, int(raw_stat.get("decimals", 0) or 0))),
+    }
+
+
 def normalize_storyboard(
     raw_board: Dict[str, Any],
     duration_sec: float,
     bpm: float,
     peaks: List[float],
+    words: List[Dict[str, Any]],
     fps: int,
     width: int,
     height: int,
@@ -723,7 +876,7 @@ def normalize_storyboard(
     avg_len = duration_sec / count
     cursor = 0.0
     scenes: List[Dict[str, Any]] = []
-    wp_bank = DEFAULT_WAYPOINTS_9_16 if is_short else DEFAULT_WAYPOINTS_16_9
+    cam_bank = BEAT_CAM_PRESETS_9_16 if is_short else BEAT_CAM_PRESETS_16_9
 
     for idx, sc in enumerate(raw_scenes):
         is_last = idx == count - 1
@@ -732,37 +885,72 @@ def normalize_storyboard(
             end_sec = round(duration_sec, 3)
         else:
             raw_end = float(sc.get("endSec", (idx + 1) * avg_len))
-            min_gap = 3.2 if is_short else 4.5
-            min_end = start_sec + max(min_gap, avg_len * 0.5)
+            min_gap = 3.5 if is_short else 5.0
+            min_end = start_sec + max(min_gap, avg_len * 0.6)
             max_end = duration_sec - (count - idx - 1) * min_gap
             clamped = min(max(raw_end, min_end), max(min_end, max_end))
             end_sec = snap_to_peak(clamped, peaks, start_sec + min_gap - 0.5, duration_sec - min_gap)
         cursor = end_sec
+        sc_dur = max(3.0, end_sec - start_sec)
 
         pal = PALETTES[idx % len(PALETTES)]
         bg_hex = sanitize_hex(sc.get("bgHex"), pal["bgHex"])
         accent_hex = sanitize_hex(sc.get("accentHex"), pal["accentHex"])
 
-        wps = sc.get("cameraWaypoints")
-        default_wps = wp_bank[idx % len(wp_bank)]
-        clean_wps = []
-        if isinstance(wps, list) and len(wps) >= 2:
-            for wi, wp in enumerate(wps[:4]):
-                dwp = default_wps[wi % len(default_wps)]
-                off = wp.get("offset") if isinstance(wp, dict) else None
-                look = wp.get("lookOffset") if isinstance(wp, dict) else None
-                if not (isinstance(off, list) and len(off) == 3):
-                    off = dwp["offset"]
-                if not (isinstance(look, list) and len(look) == 3):
-                    look = dwp["lookOffset"]
-                clean_wps.append(
-                    {
-                        "offset": [round(min(8.5, max(-8.5, float(x))), 3) for x in off],
-                        "lookOffset": [round(min(1.5, max(-1.5, float(x))), 3) for x in look],
-                    }
-                )
-        else:
-            clean_wps = default_wps
+        # Force 3-4s micro-beats inside every chapter!
+        raw_beats = sc.get("beats") if isinstance(sc.get("beats"), list) else []
+        target_beats = max(2, min(4, int(round(sc_dur / 3.4))))
+        if sc_dur < 5.5:
+            target_beats = 2
+
+        default_cams = cam_bank[idx % len(cam_bank)]
+        clean_beats: List[Dict[str, Any]] = []
+        b_cursor = start_sec
+        b_step = sc_dur / target_beats
+
+        for bi in range(target_beats):
+            b_is_last = bi == target_beats - 1
+            b_start = round(b_cursor, 3)
+            if b_is_last:
+                b_end = end_sec
+            else:
+                b_raw_end = start_sec + (bi + 1) * b_step
+                b_end = snap_to_peak(b_raw_end, peaks, b_start + 2.4, end_sec - 2.3)
+                if b_end <= b_start + 2.2:
+                    b_end = round(min(end_sec - 2.0, b_start + b_step), 3)
+            b_cursor = b_end
+
+            rb = raw_beats[bi] if bi < len(raw_beats) and isinstance(raw_beats[bi], dict) else {}
+            def_cam = default_cams[bi % len(default_cams)]
+            off = rb.get("cameraOffset")
+            look = rb.get("lookOffset")
+            if not (isinstance(off, list) and len(off) == 3):
+                off = def_cam["offset"]
+            if not (isinstance(look, list) and len(look) == 3):
+                look = def_cam["lookOffset"]
+
+            callouts = normalize_callouts(rb.get("callouts"), is_short=is_short)
+            if not callouts:
+                concept_short = " ".join(str(sc.get("visualConcept") or "CORE HARDWARE").upper().split()[:3])
+                callouts = [{"label": concept_short, "anchorPct": [52, 48], "boxPct": [72, 24]}]
+
+            stat_counter = normalize_stat_counter(rb.get("statCounter"))
+            # Attach any emphasis peak inside this beat for punchy counter trigger
+            beat_peaks = [p for p in peaks if b_start <= p <= b_end]
+            trigger_sec = beat_peaks[0] if beat_peaks else round(b_start + 0.18, 3)
+
+            clean_beats.append(
+                {
+                    "id": f"b_{idx + 1:02d}_{bi + 1:02d}",
+                    "startSec": b_start,
+                    "endSec": round(b_end, 3),
+                    "triggerSec": trigger_sec,
+                    "cameraOffset": [round(min(8.5, max(-8.5, float(x))), 3) for x in off],
+                    "lookOffset": [round(min(1.5, max(-1.5, float(x))), 3) for x in look],
+                    "callouts": callouts,
+                    "statCounter": stat_counter,
+                }
+            )
 
         world_pos = [
             round(idx * 28.0, 2),
@@ -774,16 +962,18 @@ def normalize_storyboard(
             {
                 "id": f"scene_{idx + 1:02d}",
                 "componentName": f"Scene_{idx + 1:02d}",
-                "visualConcept": str(sc.get("visualConcept") or f"Unique Engineering Concept {idx + 1}")[:120],
-                "visualSpec": str(sc.get("visualSpec") or "Animated multi-part stylized 3D cutaway mechanism.")[:500],
+                "visualConcept": str(sc.get("visualConcept") or f"Hardware Assembly {idx + 1}")[:120],
+                "visualSpec": str(sc.get("visualSpec") or "Multi-part CAD-edged cutaway hardware assembly.")[:500],
                 "startSec": start_sec,
                 "endSec": end_sec,
                 "worldPos": world_pos,
                 "bgHex": bg_hex,
                 "accentHex": accent_hex,
-                "cameraWaypoints": clean_wps,
+                "beats": clean_beats,
             }
         )
+
+    subtitle_chunks = build_subtitle_chunks(words, duration_sec)
 
     return {
         "channel": "InfraVerse",
@@ -794,6 +984,7 @@ def normalize_storyboard(
         "hasAudio": True,
         "bpm": bpm,
         "emphasisPeaksSec": peaks,
+        "subtitleChunks": subtitle_chunks,
         "scenes": scenes,
     }
 
@@ -829,6 +1020,7 @@ def write_registry_and_timeline(plan: Dict[str, Any]) -> None:
     timeline_tsx = f"""import React from "react";
 import {{ AbsoluteFill }} from "remotion";
 import {{ Continuous3DWorld }} from "../components/Continuous3DWorld";
+import {{ HudOverlay }} from "../components/HudOverlay";
 import {{ SCENE_PLAN }} from "./ScenesData";
 
 export const GENERATED_TOTAL_FRAMES = {total_frames};
@@ -837,6 +1029,7 @@ export const GeneratedTimeline: React.FC = () => {{
   return (
     <AbsoluteFill>
       <Continuous3DWorld plan={{SCENE_PLAN}} />
+      <HudOverlay plan={{SCENE_PLAN}} />
     </AbsoluteFill>
   );
 }};
@@ -888,12 +1081,12 @@ CODE:
 Return ONLY the fixed complete TSX file.
 """
             try:
-                fixed_raw = generate_with_fallback(client, fix_prompt, role="flash", json_mode=False, temperature=0.2)
+                fixed_raw = generate_with_fallback(client, fix_prompt, role="flash", json_mode=False)
                 scene_num = int(cname.split("_")[1])
                 sc_path.write_text(sanitize_scene_tsx(fixed_raw, scene_num), encoding="utf-8")
             except Exception as exc:
                 print(f"[self_heal] Repair skipped for {cname} ({exc}).")
-            time.sleep(3)
+            time.sleep(2)
 
     final_res = run_tsc_check()
     if final_res.returncode != 0:
@@ -902,7 +1095,7 @@ Return ONLY the fixed complete TSX file.
         for cname in still_broken:
             num = int(cname.split("_")[1])
             sc_meta = scene_map.get(cname, {})
-            print(f"[self_heal] Swapping stubborn {cname} to unique procedural fallback.")
+            print(f"[self_heal] Swapping stubborn {cname} to multi-part procedural fallback.")
             (SCENES_DIR / f"{cname}.tsx").write_text(
                 build_safe_fallback_scene_tsx(num, sc_meta.get("accentHex", "#22D3EE"), sc_meta.get("visualConcept", cname)),
                 encoding="utf-8",
@@ -918,6 +1111,7 @@ def main() -> None:
     duration_sec = float(beats["duration_sec"])
     bpm = float(beats["bpm"])
     peaks = list(beats["emphasis_peaks"])
+    words = list(transcript.get("words") or [])
 
     video_format = os.environ.get("VIDEO_FORMAT", "long_16_9").strip()
     quality = os.environ.get("QUALITY_PRESET", "1080p_30fps").strip()
@@ -936,49 +1130,57 @@ def main() -> None:
     min_sc, max_sc = compute_scene_range(duration_sec, is_short=is_short)
 
     framing_note = (
-        "VERTICAL 9:16 YOUTUBE SHORT MODE (1080x1920): Keep X spread tight [-2.2 .. +2.2] and build TALL vertical stacked machinery/towers [-2.2 .. +2.8 in Y] so every visual element fills a vertical phone screen! Use punchy pacing synced tightly to the user's hook and voiceover."
+        "VERTICAL 9:16 SHORT (1080x1920): Keep X tight [-2.2 .. +2.2], build TALL vertical stacked hardware [-2.2 .. +2.8 Y]."
         if is_short
-        else "WIDESCREEN 16:9 MODE (1920x1080): Keep geometry spread within [-3.8 .. +3.8] X/Z and [-2.0 .. +2.8] Y."
+        else "WIDESCREEN 16:9 (1920x1080): Keep geometry spread within [-3.8 .. +3.8] X/Z and [-2.0 .. +2.5] Y."
     )
 
     storyboard_prompt = f"""
-You are the Lead 3D Film Director for a stylized matte-3D engineering channel (like Professor Of How / Zack D. Films mechanical cutaways, ZERO text on screen).
+You are the Lead 3D Motion Director & Technical Illustrator (think Branch Education / Real Engineering meets crisp HUD callouts).
 
-ASPECT & FRAMING:
+ASPECT:
 {framing_note}
 
-USER'S LOOK, STYLE & ELEMENTS DESCRIPTION (Follow EVERY visual style, color look, mood, and element requested by the user!):
-{visuals_prompt if visuals_prompt else "(No visuals.txt uploaded — invent vivid, completely unique engineering & infrastructure 3D scenes matching the voiceover!)"}
+USER VISUAL DESCRIPTION:
+{visuals_prompt if visuals_prompt else "(No visuals.txt uploaded — invent vivid multi-part engineering & infrastructure 3D scenes matching the voiceover!)"}
 
-CUSTOM .GLB MODELS IN public/models/:
-{json.dumps(custom_models)}
+CUSTOM .GLB MODELS: {json.dumps(custom_models)}
 
-VOICEOVER TRANSCRIPT ({duration_sec:.2f}s):
-{json.dumps(transcript.get("segments", []), ensure_ascii=False)}
+VOICEOVER SEGMENTS ({duration_sec:.2f}s):
+{json.dumps([{"start": s["start"], "end": s["end"], "text": s["text"]} for s in transcript.get("segments", [])], ensure_ascii=False)}
 
 VOCAL EMPHASIS PEAKS (seconds):
 {json.dumps(peaks[:120])}
 
 HARD RULES:
-1. Build the FULL {duration_sec:.2f}s video into {min_sc} to {max_sc} continuous chapters ("scenes") matching the narration and the user's requested hook/elements/look.
-2. ZERO REPETITION: Every chapter MUST have a completely DIFFERENT `visualConcept`, layout, and hero objects!
-3. CONTINUOUS CUTAWAY MOTION: Describe moving parts & `RevealSlideGroup` cutaways in `visualSpec`.
-4. CAMERA FLIGHT: 3 smooth `cameraWaypoints` per scene (`offset`: [x,y,z], `lookOffset`: [lx,ly,lz]).
-5. HONOR USER LOOK & COLORS: Choose `bgHex` and `accentHex` matching the exact look/mood requested in the user's description (or cohesive dark studio hues if unspecified).
+1. Divide the {duration_sec:.2f}s narration into {min_sc} to {max_sc} unique 3D chapters (`scenes`), roughly 6–10 seconds each! NEVER make a chapter hold longer than 11 seconds.
+2. ZERO REPETITION: Every chapter MUST depict a completely DIFFERENT multi-part hardware subject (`visualConcept` & `visualSpec`).
+3. FORCED 3–4 SECOND BEATS: Inside EVERY chapter, define 2 or 3 distinct `beats` (each ~3–4 seconds long!). Each beat MUST change `cameraOffset` markedly (wide view -> close-up cutaway -> low tracking angle) AND include:
+   - `callouts`: 1 or 2 crisp uppercase engineering labels (`"345 kV SUBSTATION"`, `"600 kW / RACK"`, `"CLOSED-LOOP CDU"`, etc.) with `anchorPct` [25..75, 28..68] pointing near the center subject and `boxPct` [18..78, 20..68] cleanly placed off to the side.
+   - `statCounter`: optional animated number card when the narration hits a spec, dollar figure, wattage, or scale (e.g., `{{"label": "CAMPUS CAPEX", "fromVal": 0, "toVal": 100, "prefix": "$", "suffix": "B"}}` or `{{"label": "CHIP POWER", "fromVal": 300, "toVal": 1000, "suffix": " W"}}`).
+4. READABLE SLATE STUDIO COLORS: Use deep rich slate/blueprint `bgHex` (#0E1729, #122038, #1D1319, #0F212B, #0E2420) and bright `accentHex`.
 
 Return ONLY valid JSON:
 {{
   "scenes": [
     {{
-      "visualConcept": "Short unique concept summary",
-      "visualSpec": "Detailed 3D composition & cutaway motions matching user elements",
-      "endSec": 6.5,
-      "bgHex": "#08101E",
+      "visualConcept": "Short unique hardware concept",
+      "visualSpec": "Multi-part assembly: concrete/slate pad, HardwareRack rows, PipeConduit loops, FinnedHousing, cutaway RevealSlideGroup",
+      "endSec": 8.0,
+      "bgHex": "#0E1729",
       "accentHex": "#22D3EE",
-      "cameraWaypoints": [
-        {{"offset": [4.6, 3.0, 6.2], "lookOffset": [0.0, 0.2, 0.0]}},
-        {{"offset": [1.4, 1.5, 4.4], "lookOffset": [0.0, 0.2, 0.0]}},
-        {{"offset": [-2.8, 2.1, 4.9], "lookOffset": [0.0, 0.0, 0.0]}}
+      "beats": [
+        {{
+          "cameraOffset": [5.6, 3.0, 6.0],
+          "lookOffset": [0.0, 0.2, 0.0],
+          "callouts": [{{"label": "1,000 MW CAMPUS", "anchorPct": [52, 48], "boxPct": [74, 24]}}],
+          "statCounter": {{"label": "TOTAL CAPEX", "fromVal": 0, "toVal": 100, "prefix": "$", "suffix": "B"}}
+        }},
+        {{
+          "cameraOffset": [1.8, 1.5, 3.6],
+          "lookOffset": [0.2, 0.1, 0.0],
+          "callouts": [{{"label": "ROOF CUTAWAY", "anchorPct": [48, 44], "boxPct": [22, 32]}}]
+        }}
       ]
     }}
   ]
@@ -987,12 +1189,13 @@ Return ONLY valid JSON:
 
     client = get_client()
     print(f"[generate_scenes] Planning storyboard from {input_dir.name}/ ({width}x{height} @ {fps}fps)...")
-    raw_board = generate_with_fallback(client, storyboard_prompt, role="pro", json_mode=True, temperature=0.45)
+    raw_board = generate_with_fallback(client, storyboard_prompt, role="pro", json_mode=True)
     plan = normalize_storyboard(
         parse_json_strict(raw_board),
         duration_sec=duration_sec,
         bpm=bpm,
         peaks=peaks,
+        words=words,
         fps=fps,
         width=width,
         height=height,
@@ -1006,7 +1209,7 @@ Return ONLY valid JSON:
 
     scenes = plan["scenes"]
     batch_size = 4
-    print(f"[generate_scenes] Coding {len(scenes)} unique 3D scenes in batches of {batch_size}...")
+    print(f"[generate_scenes] Coding {len(scenes)} multi-part 3D scenes in batches of {batch_size}...")
 
     for b_start in range(0, len(scenes), batch_size):
         batch = scenes[b_start : b_start + batch_size]
@@ -1021,12 +1224,11 @@ Return ONLY valid JSON:
             for sc in batch
         ]
         code_prompt = f"""
-You are an Expert Three.js / React Three Fiber 3D Technical Animator.
+You are an Expert Three.js / React Three Fiber CAD & Hardware 3D Animator.
 {framing_note}
-USER LOOK GUIDANCE: {visuals_prompt[:1000] if visuals_prompt else "Sleek stylized matte-3D engineering studio."}
 {STUDIO_KIT_API_DOC}
 
-BATCH TO CODE (Make every scene visually distinct, richly detailed with 8–18 components each, with cutaway RevealSlideGroup + continuous SpinGroup/BobGroup/FlowStream/RisingParticles motion!):
+BATCH TO CODE (Each scene MUST use rich compound hardware like HardwareRack, FinnedHousing, PipeConduit, HeatSinkArray, GlassShell, and RevealSlideGroup cutaways with 8-18 mechanical sub-parts. NEVER output just 1 cylinder + floating dots!):
 {json.dumps(batch_specs, indent=2)}
 
 Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_01") and each value is the complete valid TSX file string starting with `import React from "react";`.
@@ -1037,12 +1239,11 @@ Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_
                 code_prompt,
                 role="flash",
                 json_mode=True,
-                max_output_tokens=32768,
-                temperature=0.35,
+                max_output_tokens=65536,
             )
             generated_map = extract_scenes_dict(raw_code_json)
         except Exception as exc:
-            print(f"[generate_scenes] Batch {b_start+1} API failed ({exc}); using safe fallbacks.")
+            print(f"[generate_scenes] Batch {b_start+1} API failed ({exc}); using multi-part fallbacks.")
             generated_map = {}
 
         for sc in batch:
@@ -1056,18 +1257,18 @@ Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_
                 out_path.write_text(sanitize_scene_tsx(raw_tsx, num), encoding="utf-8")
                 print(f"  + Generated custom {cname}.tsx ({sc['visualConcept'][:48]})")
             except Exception as exc:
-                print(f"  ! {cname} sanitize issue ({exc}); writing unique fallback.")
+                print(f"  ! {cname} sanitize issue ({exc}); writing multi-part fallback.")
                 out_path.write_text(
                     build_safe_fallback_scene_tsx(num, sc["accentHex"], sc["visualConcept"]),
                     encoding="utf-8",
                 )
 
         if b_start + batch_size < len(scenes):
-            time.sleep(6)
+            time.sleep(4)
 
     write_registry_and_timeline(plan)
     self_heal_scenes(client, plan)
-    print(f"[generate_scenes] Complete: {len(scenes)} unique dynamic scenes verified!")
+    print(f"[generate_scenes] Complete: {len(scenes)} multi-part dynamic scenes + HUD verified!")
 
 
 if __name__ == "__main__":
@@ -1084,7 +1285,7 @@ PLAN_PATH = ROOT / "work" / "scene_plan.json"
 SCENES_DIR = ROOT / "src" / "generated" / "scenes"
 TIMELINE_PATH = ROOT / "src" / "generated" / "GeneratedTimeline.tsx"
 
-FORBIDDEN_MARKERS = ("<Text", "<Html", "Subtitle", "Caption", "Karaoke", "<Sequence")
+FORBIDDEN_3D_TOKENS = ("<Text", "<Html", "<Sequence")
 
 
 def audit_plan(plan: Dict[str, Any]) -> List[str]:
@@ -1103,8 +1304,14 @@ def audit_plan(plan: Dict[str, Any]) -> List[str]:
         if idx > 0 and abs(float(sc["startSec"]) - float(scenes[idx - 1]["endSec"])) > 0.01:
             errors.append(f"Timeline discontinuity between {scenes[idx-1]['id']} and {sc['id']}.")
 
-        if len(sc.get("cameraWaypoints") or []) < 2:
-            errors.append(f"{sc['id']} has fewer than 2 cameraWaypoints.")
+        beats = sc.get("beats") or []
+        if len(beats) < 2:
+            errors.append(f"{sc['id']} has fewer than 2 micro-beats (visual hold too static).")
+
+        for b in beats:
+            b_dur = float(b["endSec"]) - float(b["startSec"])
+            if b_dur > 5.5:
+                errors.append(f"{b['id']} hold duration {b_dur:.2f}s exceeds 5.5s max beat pace.")
 
         cname = sc.get("componentName")
         if not (SCENES_DIR / f"{cname}.tsx").exists():
@@ -1113,14 +1320,14 @@ def audit_plan(plan: Dict[str, Any]) -> List[str]:
     return errors
 
 
-def audit_source_files() -> List[str]:
+def audit_3d_files() -> List[str]:
     errors: List[str] = []
     files = list(SCENES_DIR.glob("Scene_*.tsx")) + [TIMELINE_PATH]
     for f in files:
         if not f.exists():
             continue
         txt = f.read_text(encoding="utf-8")
-        for m in FORBIDDEN_MARKERS:
+        for m in FORBIDDEN_3D_TOKENS:
             if m in txt:
                 errors.append(f"Forbidden token '{m}' found inside {f.name}")
     return errors
@@ -1130,10 +1337,11 @@ def main() -> None:
     if not PLAN_PATH.exists():
         raise SystemExit("Missing work/scene_plan.json")
     plan = json.loads(PLAN_PATH.read_text(encoding="utf-8"))
-    errs = audit_plan(plan) + audit_source_files()
+    errs = audit_plan(plan) + audit_3d_files()
     if errs:
         raise SystemExit("[validate_scenes] FAILED:\n - " + "\n - ".join(errs))
-    print(f"[validate_scenes] PASSED: {len(plan['scenes'])} unique continuous dynamic scenes.")
+    total_beats = sum(len(s.get("beats", [])) for s in plan["scenes"])
+    print(f"[validate_scenes] PASSED: {len(plan['scenes'])} scenes, {total_beats} visual beats, continuous camera + HUD.")
 
 
 if __name__ == "__main__":
@@ -1211,13 +1419,21 @@ def synthesize_documentary_bgm(n_samples: int, bpm: float) -> np.ndarray:
 
 def synthesize_glide_swell() -> np.ndarray:
     rng = np.random.default_rng(11)
-    n = int(1.10 * SAMPLE_RATE)
+    n = int(1.05 * SAMPLE_RATE)
     t = np.arange(n) / SAMPLE_RATE
-    env = np.sin(np.pi * t / 1.10) ** 1.8
+    env = np.sin(np.pi * t / 1.05) ** 1.8
     air = bandpass(rng.normal(0.0, 1.0, n), 160.0, 950.0) * env
-    sub = np.sin(2.0 * np.pi * (54.0 - 16.0 * (t / 1.10)) * t) * env * 0.35
+    sub = np.sin(2.0 * np.pi * (54.0 - 16.0 * (t / 1.05)) * t) * env * 0.35
     sig = air * 0.65 + sub
     stereo = np.column_stack([sig, sig * 0.96])
+    return stereo / (float(np.max(np.abs(stereo))) + 1e-9)
+
+
+def synthesize_hud_tick() -> np.ndarray:
+    n = int(0.08 * SAMPLE_RATE)
+    t = np.arange(n) / SAMPLE_RATE
+    sig = np.sin(2.0 * np.pi * 1480.0 * t) * np.exp(-t * 60.0) * 0.6
+    stereo = np.column_stack([sig, sig])
     return stereo / (float(np.max(np.abs(stereo))) + 1e-9)
 
 
@@ -1236,15 +1452,24 @@ def main() -> None:
     speech_active = np.clip(smooth_env / (np.percentile(smooth_env, 90) + 1e-6), 0.0, 1.0)
     duck_gain = 0.09 - 0.045 * speech_active
 
-    bgm_stereo = synthesize_documentary_bgm(n_samples, float(plan.get("bpm", 96.0)))
+    bgm_stereo = synthesize_documentary_bgm(n_samples, float(plan.get("bpm", 102.0)))
     mix = vo_stereo * 0.92 + bgm_stereo * duck_gain[:, None]
 
     swell = synthesize_glide_swell() * 0.14
-    for sc in plan["scenes"][1:]:
-        start_idx = max(0, int((float(sc["startSec"]) - 0.55) * SAMPLE_RATE))
-        end_idx = min(n_samples, start_idx + len(swell))
-        if end_idx > start_idx:
-            mix[start_idx:end_idx] += swell[: end_idx - start_idx]
+    hud_tick = synthesize_hud_tick() * 0.09
+
+    for sc_idx, sc in enumerate(plan["scenes"]):
+        if sc_idx > 0:
+            s_idx = max(0, int((float(sc["startSec"]) - 0.5) * SAMPLE_RATE))
+            e_idx = min(n_samples, s_idx + len(swell))
+            if e_idx > s_idx:
+                mix[s_idx:e_idx] += swell[: e_idx - s_idx]
+
+        for b in sc.get("beats", []):
+            t_idx = max(0, int(float(b["startSec"]) * SAMPLE_RATE))
+            te_idx = min(n_samples, t_idx + len(hud_tick))
+            if te_idx > t_idx:
+                mix[t_idx:te_idx] += hud_tick[: te_idx - t_idx]
 
     mix = np.tanh(mix * 0.95)
     master_wav = WORK_DIR / "master_audio.wav"
@@ -1383,9 +1608,41 @@ export interface DynamicSceneProps {
   accentHex: string;
 }
 
-export interface CameraWaypoint {
-  offset: V3;
+export interface HudCallout {
+  label: string;
+  anchorPct: [number, number];
+  boxPct: [number, number];
+}
+
+export interface StatCounter {
+  label: string;
+  fromVal: number;
+  toVal: number;
+  prefix?: string;
+  suffix?: string;
+  decimals?: number;
+}
+
+export interface VisualBeat {
+  id: string;
+  startSec: number;
+  endSec: number;
+  triggerSec: number;
+  cameraOffset: V3;
   lookOffset: V3;
+  callouts: HudCallout[];
+  statCounter: StatCounter | null;
+}
+
+export interface SubtitleWord {
+  text: string;
+  highlight: boolean;
+}
+
+export interface SubtitleChunk {
+  startSec: number;
+  endSec: number;
+  words: SubtitleWord[];
 }
 
 export interface DocumentaryScene {
@@ -1398,7 +1655,7 @@ export interface DocumentaryScene {
   worldPos: V3;
   bgHex: string;
   accentHex: string;
-  cameraWaypoints: CameraWaypoint[];
+  beats: VisualBeat[];
 }
 
 export interface DocumentaryPlan {
@@ -1410,12 +1667,13 @@ export interface DocumentaryPlan {
   hasAudio: boolean;
   bpm: number;
   emphasisPeaksSec: number[];
+  subtitleChunks: SubtitleChunk[];
   scenes: DocumentaryScene[];
 }
 '''
 
 FILES["src/components/StudioKit.tsx"] = r'''
-import React, { Component, Suspense, useMemo } from "react";
+import React, { Component, Suspense, useEffect, useMemo } from "react";
 import { useGLTF } from "@react-three/drei";
 import { staticFile } from "remotion";
 import * as THREE from "three";
@@ -1427,6 +1685,28 @@ const safeVec = (v?: V3, fallback: V3 = [0, 0, 0]): V3 =>
 const safeHex = (c?: string, fallback = "#334155"): string =>
   typeof c === "string" && c.trim() ? c.trim() : fallback;
 
+/**
+ * Prevents near-black architectural materials from vanishing against dark studio backgrounds.
+ * Lifts ultra-dark colors cleanly up to readable slate (#2B3B52+) unless emissive.
+ */
+const liftStructuralHex = (hex: string): string => {
+  try {
+    const c = new THREE.Color(hex);
+    const lum = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+    if (lum < 0.08) {
+      c.lerp(new THREE.Color("#364A66"), 0.72);
+      return "#" + c.getHexString();
+    }
+    if (lum < 0.14) {
+      c.lerp(new THREE.Color("#425878"), 0.45);
+      return "#" + c.getHexString();
+    }
+    return hex;
+  } catch {
+    return "#364A66";
+  }
+};
+
 export const MatteBox: React.FC<{
   pos?: V3;
   rot?: V3;
@@ -1437,30 +1717,60 @@ export const MatteBox: React.FC<{
   roughness?: number;
   metalness?: number;
   opacity?: number;
+  edges?: boolean;
+  edgeColor?: string;
 }> = ({
   pos,
   rot,
   size = [1, 1, 1],
-  color = "#334155",
+  color = "#3B4E6B",
   emissive,
   emissiveIntensity = 1.4,
   roughness = 0.42,
-  metalness = 0.28,
+  metalness = 0.32,
   opacity = 1,
-}) => (
-  <mesh position={safeVec(pos)} rotation={safeVec(rot)}>
-    <boxGeometry args={safeVec(size, [1, 1, 1])} />
-    <meshStandardMaterial
-      color={safeHex(color)}
-      emissive={emissive ? safeHex(emissive) : "#000000"}
-      emissiveIntensity={emissive ? emissiveIntensity : 0}
-      roughness={roughness}
-      metalness={metalness}
-      transparent={opacity < 1}
-      opacity={opacity}
-    />
-  </mesh>
-);
+  edges = true,
+  edgeColor = "#7DD3FC",
+}) => {
+  const s = safeVec(size, [1, 1, 1]);
+  const sx = Math.max(0.01, s[0]);
+  const sy = Math.max(0.01, s[1]);
+  const sz = Math.max(0.01, s[2]);
+
+  const { geo, edgeGeo } = useMemo(() => {
+    const g = new THREE.BoxGeometry(sx, sy, sz);
+    const e = new THREE.EdgesGeometry(g, 20);
+    return { geo: g, edgeGeo: e };
+  }, [sx, sy, sz]);
+
+  useEffect(() => () => {
+    geo.dispose();
+    edgeGeo.dispose();
+  }, [geo, edgeGeo]);
+
+  const finalColor = emissive ? safeHex(color) : liftStructuralHex(safeHex(color));
+
+  return (
+    <group position={safeVec(pos)} rotation={safeVec(rot)}>
+      <mesh geometry={geo}>
+        <meshStandardMaterial
+          color={finalColor}
+          emissive={emissive ? safeHex(emissive) : "#000000"}
+          emissiveIntensity={emissive ? emissiveIntensity : 0}
+          roughness={roughness}
+          metalness={metalness}
+          transparent={opacity < 1}
+          opacity={opacity}
+        />
+      </mesh>
+      {edges && !emissive && (
+        <lineSegments geometry={edgeGeo}>
+          <lineBasicMaterial color={safeHex(edgeColor)} transparent opacity={0.42} />
+        </lineSegments>
+      )}
+    </group>
+  );
+};
 
 export const MatteCylinder: React.FC<{
   pos?: V3;
@@ -1478,6 +1788,8 @@ export const MatteCylinder: React.FC<{
   emissiveIntensity?: number;
   roughness?: number;
   metalness?: number;
+  edges?: boolean;
+  edgeColor?: string;
 }> = ({
   pos,
   rot,
@@ -1492,23 +1804,53 @@ export const MatteCylinder: React.FC<{
   color = "#475569",
   emissive,
   emissiveIntensity = 1.4,
-  roughness = 0.38,
-  metalness = 0.35,
-}) => (
-  <mesh position={safeVec(pos)} rotation={safeVec(rot)}>
-    <cylinderGeometry
-      args={[radiusTop, radiusBottom, height, segments, 1, openEnded, thetaStart, thetaLength]}
-    />
-    <meshStandardMaterial
-      color={safeHex(color)}
-      emissive={emissive ? safeHex(emissive) : "#000000"}
-      emissiveIntensity={emissive ? emissiveIntensity : 0}
-      roughness={roughness}
-      metalness={metalness}
-      side={doubleSide ? THREE.DoubleSide : THREE.FrontSide}
-    />
-  </mesh>
-);
+  roughness = 0.36,
+  metalness = 0.4,
+  edges = true,
+  edgeColor = "#93C5FD",
+}) => {
+  const { geo, edgeGeo } = useMemo(() => {
+    const g = new THREE.CylinderGeometry(
+      radiusTop,
+      radiusBottom,
+      height,
+      segments,
+      1,
+      openEnded,
+      thetaStart,
+      thetaLength
+    );
+    const e = new THREE.EdgesGeometry(g, 24);
+    return { geo: g, edgeGeo: e };
+  }, [radiusTop, radiusBottom, height, segments, openEnded, thetaStart, thetaLength]);
+
+  useEffect(() => () => {
+    geo.dispose();
+    edgeGeo.dispose();
+  }, [geo, edgeGeo]);
+
+  const finalColor = emissive ? safeHex(color) : liftStructuralHex(safeHex(color));
+
+  return (
+    <group position={safeVec(pos)} rotation={safeVec(rot)}>
+      <mesh geometry={geo}>
+        <meshStandardMaterial
+          color={finalColor}
+          emissive={emissive ? safeHex(emissive) : "#000000"}
+          emissiveIntensity={emissive ? emissiveIntensity : 0}
+          roughness={roughness}
+          metalness={metalness}
+          side={doubleSide ? THREE.DoubleSide : THREE.FrontSide}
+        />
+      </mesh>
+      {edges && !emissive && (
+        <lineSegments geometry={edgeGeo}>
+          <lineBasicMaterial color={safeHex(edgeColor)} transparent opacity={0.44} />
+        </lineSegments>
+      )}
+    </group>
+  );
+};
 
 export const MatteSphere: React.FC<{
   pos?: V3;
@@ -1527,12 +1869,12 @@ export const MatteSphere: React.FC<{
   emissive,
   emissiveIntensity = 1.5,
   roughness = 0.35,
-  metalness = 0.25,
+  metalness = 0.3,
 }) => (
   <mesh position={safeVec(pos)} scale={safeVec(scale, [1, 1, 1])}>
     <sphereGeometry args={[radius, 18, 16]} />
     <meshStandardMaterial
-      color={safeHex(color)}
+      color={emissive ? safeHex(color) : liftStructuralHex(safeHex(color))}
       emissive={emissive ? safeHex(emissive) : "#000000"}
       emissiveIntensity={emissive ? emissiveIntensity : 0}
       roughness={roughness}
@@ -1563,7 +1905,7 @@ export const MatteTorus: React.FC<{
   <mesh position={safeVec(pos)} rotation={safeVec(rot)}>
     <torusGeometry args={[radius, tube, 12, 28, arc]} />
     <meshStandardMaterial
-      color={safeHex(color)}
+      color={emissive ? safeHex(color) : liftStructuralHex(safeHex(color))}
       emissive={emissive ? safeHex(emissive) : "#000000"}
       emissiveIntensity={emissive ? emissiveIntensity : 0}
       roughness={0.35}
@@ -1581,6 +1923,8 @@ export const MatteCone: React.FC<{
   color?: string;
   emissive?: string;
   emissiveIntensity?: number;
+  edges?: boolean;
+  edgeColor?: string;
 }> = ({
   pos,
   rot,
@@ -1590,18 +1934,400 @@ export const MatteCone: React.FC<{
   color = "#475569",
   emissive,
   emissiveIntensity = 1.4,
-}) => (
-  <mesh position={safeVec(pos)} rotation={safeVec(rot)}>
-    <coneGeometry args={[radius, height, segments]} />
-    <meshStandardMaterial
-      color={safeHex(color)}
-      emissive={emissive ? safeHex(emissive) : "#000000"}
-      emissiveIntensity={emissive ? emissiveIntensity : 0}
-      roughness={0.4}
-      metalness={0.3}
-    />
-  </mesh>
-);
+  edges = true,
+  edgeColor = "#93C5FD",
+}) => {
+  const { geo, edgeGeo } = useMemo(() => {
+    const g = new THREE.ConeGeometry(radius, height, segments);
+    const e = new THREE.EdgesGeometry(g, 24);
+    return { geo: g, edgeGeo: e };
+  }, [radius, height, segments]);
+
+  useEffect(() => () => {
+    geo.dispose();
+    edgeGeo.dispose();
+  }, [geo, edgeGeo]);
+
+  return (
+    <group position={safeVec(pos)} rotation={safeVec(rot)}>
+      <mesh geometry={geo}>
+        <meshStandardMaterial
+          color={emissive ? safeHex(color) : liftStructuralHex(safeHex(color))}
+          emissive={emissive ? safeHex(emissive) : "#000000"}
+          emissiveIntensity={emissive ? emissiveIntensity : 0}
+          roughness={0.4}
+          metalness={0.35}
+        />
+      </mesh>
+      {edges && !emissive && (
+        <lineSegments geometry={edgeGeo}>
+          <lineBasicMaterial color={safeHex(edgeColor)} transparent opacity={0.44} />
+        </lineSegments>
+      )}
+    </group>
+  );
+};
+
+export const GlassShell: React.FC<{
+  pos?: V3;
+  rot?: V3;
+  shape?: "box" | "cylinder";
+  size?: V3;
+  radius?: number;
+  height?: number;
+  color?: string;
+  edgeColor?: string;
+  opacity?: number;
+}> = ({
+  pos,
+  rot,
+  shape = "box",
+  size = [2, 2, 2],
+  radius = 1,
+  height = 2,
+  color = "#38BDF8",
+  edgeColor = "#7DD3FC",
+  opacity = 0.22,
+}) => {
+  const s = safeVec(size, [2, 2, 2]);
+  const { geo, edgeGeo } = useMemo(() => {
+    const g =
+      shape === "cylinder"
+        ? new THREE.CylinderGeometry(radius, radius, height, 24)
+        : new THREE.BoxGeometry(s[0], s[1], s[2]);
+    const e = new THREE.EdgesGeometry(g, 24);
+    return { geo: g, edgeGeo: e };
+  }, [shape, radius, height, s[0], s[1], s[2]]);
+
+  useEffect(() => () => {
+    geo.dispose();
+    edgeGeo.dispose();
+  }, [geo, edgeGeo]);
+
+  return (
+    <group position={safeVec(pos)} rotation={safeVec(rot)}>
+      <mesh geometry={geo}>
+        <meshStandardMaterial
+          color={safeHex(color)}
+          transparent
+          opacity={opacity}
+          roughness={0.15}
+          metalness={0.15}
+          depthWrite={false}
+        />
+      </mesh>
+      <lineSegments geometry={edgeGeo}>
+        <lineBasicMaterial color={safeHex(edgeColor)} transparent opacity={0.7} />
+      </lineSegments>
+    </group>
+  );
+};
+
+export const HardwareRack: React.FC<{
+  pos?: V3;
+  rot?: V3;
+  size?: V3;
+  bays?: number;
+  accentHex?: string;
+  frame: number;
+}> = ({ pos, rot, size = [1.0, 2.2, 1.0], bays = 6, accentHex = "#22D3EE", frame }) => {
+  const [w, h, d] = safeVec(size, [1.0, 2.2, 1.0]);
+  const safeBays = Math.max(3, Math.min(10, Math.round(bays)));
+  const bayStep = (h * 0.78) / safeBays;
+
+  return (
+    <group position={safeVec(pos)} rotation={safeVec(rot)}>
+      <MatteBox pos={[0, 0, 0]} size={[w, h, d]} color="#2F4059" edgeColor={accentHex} />
+      <MatteBox pos={[0, 0, d * 0.04]} size={[w * 0.86, h * 0.88, d * 0.94]} color="#1E293B" edges={false} />
+      {[-w * 0.44, w * 0.44].map((rx, ri) => (
+        <MatteBox key={ri} pos={[rx, 0, d * 0.48]} size={[w * 0.08, h * 0.96, 0.05]} color="#64748B" />
+      ))}
+      {Array.from({ length: safeBays }).map((_, bi) => {
+        const by = -h * 0.36 + bi * bayStep;
+        const pulse = 0.7 + 0.9 * Math.max(0, Math.sin((frame / 30) * 4.5 - bi * 0.6));
+        return (
+          <group key={bi} position={[0, by, d * 0.47]}>
+            <MatteBox size={[w * 0.78, bayStep * 0.68, 0.08]} color="#475569" edgeColor="#94A3B8" />
+            <MatteBox
+              pos={[-w * 0.25, 0, 0.05]}
+              size={[w * 0.22, bayStep * 0.22, 0.02]}
+              color={accentHex}
+              emissive={accentHex}
+              emissiveIntensity={pulse}
+              edges={false}
+            />
+          </group>
+        );
+      })}
+      <MatteBox pos={[0, h * 0.52, 0]} size={[w * 0.84, 0.08, d * 0.84]} color="#64748B" edgeColor={accentHex} />
+    </group>
+  );
+};
+
+export const FinnedHousing: React.FC<{
+  pos?: V3;
+  rot?: V3;
+  radius?: number;
+  height?: number;
+  finCount?: number;
+  color?: string;
+  accentHex?: string;
+  cutaway?: boolean;
+  frame: number;
+}> = ({
+  pos,
+  rot,
+  radius = 0.9,
+  height = 1.8,
+  finCount = 8,
+  color = "#3B4E6B",
+  accentHex = "#22D3EE",
+  cutaway = false,
+  frame,
+}) => {
+  const safeFins = Math.max(4, Math.min(12, Math.round(finCount)));
+  const pulse = 1.2 + Math.sin((frame / 30) * 3.5) * 0.35;
+
+  return (
+    <group position={safeVec(pos)} rotation={safeVec(rot)}>
+      {/* Top and Bottom Bolted Flanges */}
+      <MatteCylinder
+        pos={[0, height * 0.48, 0]}
+        radiusTop={radius * 1.18}
+        radiusBottom={radius * 1.18}
+        height={0.14}
+        color="#64748B"
+        edgeColor={accentHex}
+      />
+      <MatteCylinder
+        pos={[0, -height * 0.48, 0]}
+        radiusTop={radius * 1.18}
+        radiusBottom={radius * 1.18}
+        height={0.14}
+        color="#64748B"
+        edgeColor={accentHex}
+      />
+      {/* Main Housing or Cutaway Shell */}
+      {cutaway ? (
+        <>
+          <MatteCylinder
+            pos={[0, 0, 0]}
+            radiusTop={radius}
+            radiusBottom={radius}
+            height={height * 0.9}
+            thetaStart={0.5}
+            thetaLength={Math.PI * 1.35}
+            doubleSide={true}
+            color={color}
+            edgeColor={accentHex}
+          />
+          <GlassShell
+            pos={[0, 0, 0]}
+            shape="cylinder"
+            radius={radius * 0.96}
+            height={height * 0.88}
+            color={accentHex}
+            edgeColor={accentHex}
+            opacity={0.18}
+          />
+        </>
+      ) : (
+        <MatteCylinder
+          pos={[0, 0, 0]}
+          radiusTop={radius}
+          radiusBottom={radius}
+          height={height * 0.9}
+          color={color}
+          edgeColor={accentHex}
+        />
+      )}
+      {/* Glowing Internal Core */}
+      <MatteCylinder
+        pos={[0, 0, 0]}
+        radiusTop={radius * 0.45}
+        radiusBottom={radius * 0.45}
+        height={height * 0.78}
+        color={accentHex}
+        emissive={accentHex}
+        emissiveIntensity={pulse}
+        edges={false}
+      />
+      {/* Radial Cooling Fins */}
+      {Array.from({ length: safeFins }).map((_, fi) => {
+        const a = (fi / safeFins) * Math.PI * 2;
+        if (cutaway && a > 4.6 && a < 6.1) return null;
+        return (
+          <MatteBox
+            key={fi}
+            pos={[Math.cos(a) * radius * 1.02, 0, Math.sin(a) * radius * 1.02]}
+            rot={[0, -a, 0]}
+            size={[0.24, height * 0.82, 0.05]}
+            color="#475569"
+            edgeColor="#94A3B8"
+          />
+        );
+      })}
+    </group>
+  );
+};
+
+export const PipeConduit: React.FC<{
+  points: V3[];
+  tubeRadius?: number;
+  pipeColor?: string;
+  fluidColor?: string;
+  flangeCount?: number;
+  count?: number;
+  speed?: number;
+  frame: number;
+}> = ({
+  points,
+  tubeRadius = 0.11,
+  pipeColor = "#475569",
+  fluidColor = "#22D3EE",
+  flangeCount = 4,
+  count = 6,
+  speed = 0.75,
+  frame,
+}) => {
+  const safePts = useMemo(() => {
+    const valid = Array.isArray(points) && points.length >= 2 ? points : [[-2, 0, 0] as V3, [2, 0, 0] as V3];
+    return valid.map((p) => {
+      const sv = safeVec(p);
+      return new THREE.Vector3(sv[0], sv[1], sv[2]);
+    });
+  }, [points]);
+
+  const curve = useMemo(() => new THREE.CatmullRomCurve3(safePts), [safePts]);
+
+  const flanges = useMemo(() => {
+    const fCount = Math.max(2, Math.min(8, Math.round(flangeCount)));
+    const up = new THREE.Vector3(0, 1, 0);
+    return Array.from({ length: fCount }).map((_, idx) => {
+      const u = (idx + 0.5) / fCount;
+      const pt = curve.getPoint(u);
+      const tangent = curve.getTangent(u).normalize();
+      const quat = new THREE.Quaternion().setFromUnitVectors(up, tangent);
+      const euler = new THREE.Euler().setFromQuaternion(quat);
+      return {
+        pos: [pt.x, pt.y, pt.z] as V3,
+        rot: [euler.x, euler.y, euler.z] as V3,
+      };
+    });
+  }, [curve, flangeCount]);
+
+  const t = (frame / 30) * speed;
+  const safeCount = Math.max(2, Math.min(18, Math.round(count)));
+
+  return (
+    <group>
+      {/* Translucent Outer Pipe Jacket */}
+      <mesh>
+        <tubeGeometry args={[curve, 40, tubeRadius, 12, false]} />
+        <meshStandardMaterial
+          color={safeHex(pipeColor)}
+          transparent
+          opacity={0.34}
+          roughness={0.22}
+          metalness={0.4}
+          depthWrite={false}
+        />
+      </mesh>
+      {/* Thin Inner Lumen Core */}
+      <mesh>
+        <tubeGeometry args={[curve, 40, tubeRadius * 0.28, 8, false]} />
+        <meshStandardMaterial
+          color={safeHex(fluidColor)}
+          emissive={safeHex(fluidColor)}
+          emissiveIntensity={0.65}
+        />
+      </mesh>
+      {/* Bolted Pipe Flange Collars */}
+      {flanges.map((fl, fi) => (
+        <MatteCylinder
+          key={fi}
+          pos={fl.pos}
+          rot={fl.rot}
+          radiusTop={tubeRadius * 1.45}
+          radiusBottom={tubeRadius * 1.45}
+          height={0.07}
+          color="#64748B"
+          edgeColor={fluidColor}
+        />
+      ))}
+      {/* Fluid/Energy Capsules Traveling Inside Conduit */}
+      {Array.from({ length: safeCount }).map((_, idx) => {
+        const u = ((t + idx / safeCount) % 1 + 1) % 1;
+        const pt = curve.getPoint(u);
+        return (
+          <mesh key={idx} position={[pt.x, pt.y, pt.z]}>
+            <sphereGeometry args={[tubeRadius * 0.68, 10, 10]} />
+            <meshStandardMaterial
+              color={safeHex(fluidColor)}
+              emissive={safeHex(fluidColor)}
+              emissiveIntensity={2.1}
+            />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+};
+
+export const HeatSinkArray: React.FC<{
+  pos?: V3;
+  rot?: V3;
+  size?: V3;
+  finCount?: number;
+  color?: string;
+  pipeColor?: string;
+  glowColor?: string;
+}> = ({
+  pos,
+  rot,
+  size = [1.8, 0.7, 1.4],
+  finCount = 8,
+  color = "#64748B",
+  pipeColor = "#D97706",
+  glowColor = "#22D3EE",
+}) => {
+  const [w, h, d] = safeVec(size, [1.8, 0.7, 1.4]);
+  const safeFins = Math.max(4, Math.min(14, Math.round(finCount)));
+  const step = w / safeFins;
+
+  return (
+    <group position={safeVec(pos)} rotation={safeVec(rot)}>
+      {/* Base Cold Plate */}
+      <MatteBox pos={[0, -h * 0.36, 0]} size={[w, h * 0.24, d]} color={pipeColor} edgeColor="#FBBF24" />
+      {/* Parallel Cooling Fins */}
+      {Array.from({ length: safeFins }).map((_, fi) => {
+        const fx = -w * 0.45 + fi * step;
+        return (
+          <MatteBox
+            key={fi}
+            pos={[fx, h * 0.08, 0]}
+            size={[step * 0.35, h * 0.72, d * 0.94]}
+            color={color}
+            edgeColor={glowColor}
+          />
+        );
+      })}
+      {/* Twin Transverse Copper Heatpipes */}
+      {[-d * 0.25, d * 0.25].map((pz, pi) => (
+        <MatteCylinder
+          key={pi}
+          pos={[0, h * 0.04, pz]}
+          rot={[0, 0, Math.PI / 2]}
+          radiusTop={0.07}
+          radiusBottom={0.07}
+          height={w * 1.12}
+          color={pipeColor}
+          edgeColor="#FDE68A"
+        />
+      ))}
+    </group>
+  );
+};
 
 export const SpinGroup: React.FC<{
   pos?: V3;
@@ -1695,49 +2421,25 @@ export const FlowStream: React.FC<{
   frame: number;
 }> = ({
   points,
-  tubeRadius = 0.06,
-  tubeColor = "#1E293B",
+  tubeRadius = 0.08,
+  tubeColor = "#3B4E6B",
   particleColor = "#22D3EE",
-  particleSize = 0.11,
+  particleSize = 0.09,
   count = 6,
-  speed = 0.65,
+  speed = 0.7,
   frame,
-}) => {
-  const safePts = useMemo(() => {
-    const valid = Array.isArray(points) && points.length >= 2 ? points : [[-2, 0, 0] as V3, [2, 0, 0] as V3];
-    return valid.map((p) => {
-      const sv = safeVec(p);
-      return new THREE.Vector3(sv[0], sv[1], sv[2]);
-    });
-  }, [points]);
-
-  const curve = useMemo(() => new THREE.CatmullRomCurve3(safePts), [safePts]);
-  const t = (frame / 30) * speed;
-  const safeCount = Math.max(1, Math.min(20, Math.round(count)));
-
-  return (
-    <group>
-      <mesh>
-        <tubeGeometry args={[curve, 36, tubeRadius, 10, false]} />
-        <meshStandardMaterial color={safeHex(tubeColor)} roughness={0.35} metalness={0.3} />
-      </mesh>
-      {Array.from({ length: safeCount }).map((_, idx) => {
-        const u = ((t + idx / safeCount) % 1 + 1) % 1;
-        const pt = curve.getPoint(u);
-        return (
-          <mesh key={idx} position={[pt.x, pt.y, pt.z]}>
-            <sphereGeometry args={[particleSize, 10, 10]} />
-            <meshStandardMaterial
-              color={safeHex(particleColor)}
-              emissive={safeHex(particleColor)}
-              emissiveIntensity={2.0}
-            />
-          </mesh>
-        );
-      })}
-    </group>
-  );
-};
+}) => (
+  <PipeConduit
+    points={points}
+    tubeRadius={Math.max(tubeRadius, particleSize * 1.15)}
+    pipeColor={tubeColor}
+    fluidColor={particleColor}
+    flangeCount={3}
+    count={count}
+    speed={speed}
+    frame={frame}
+  />
+);
 
 export const RisingParticles: React.FC<{
   origin?: V3;
@@ -1750,24 +2452,24 @@ export const RisingParticles: React.FC<{
   frame: number;
 }> = ({
   origin = [0, 0, 0],
-  spread = 0.9,
-  height = 2.2,
-  count = 10,
-  size = 0.14,
+  spread = 0.75,
+  height = 2.0,
+  count = 8,
+  size = 0.1,
   color = "#F97316",
   speed = 0.45,
   frame,
 }) => {
   const o = safeVec(origin);
   const t = (frame / 30) * speed;
-  const safeCount = Math.max(1, Math.min(24, Math.round(count)));
+  const safeCount = Math.max(1, Math.min(16, Math.round(count)));
 
   return (
     <group>
       {Array.from({ length: safeCount }).map((_, i) => {
         const life = ((t + i / safeCount) % 1 + 1) % 1;
         const angle = i * 2.3 + t * 0.8;
-        const r = 0.15 + life * spread;
+        const r = 0.12 + life * spread;
         const s = Math.max(0.25, 1.0 - life * 0.65);
         return (
           <mesh
@@ -1801,16 +2503,17 @@ export const OrbitRing: React.FC<{
   center = [0, 0, 0],
   radius = 1.6,
   count = 8,
-  size = 0.1,
+  size = 0.09,
   color = "#22D3EE",
   speed = 0.8,
   tilt = [0, 0, 0],
   frame,
 }) => {
   const t = (frame / 30) * speed;
-  const safeCount = Math.max(1, Math.min(24, Math.round(count)));
+  const safeCount = Math.max(1, Math.min(18, Math.round(count)));
   return (
     <group position={safeVec(center)} rotation={safeVec(tilt)}>
+      <MatteTorus pos={[0, 0, 0]} rot={[Math.PI / 2, 0, 0]} radius={radius} tube={0.03} color="#475569" />
       {Array.from({ length: safeCount }).map((_, i) => {
         const a = t + (i / safeCount) * Math.PI * 2;
         return (
@@ -1898,31 +2601,38 @@ function sampleSceneCamera(
   frame: number,
   isVertical: boolean
 ): { pos: [number, number, number]; look: [number, number, number] } {
-  const dur = Math.max(0.1, scene.endSec - scene.startSec);
-  const u = Math.max(0, Math.min(1, (tSec - scene.startSec) / dur));
-  const wps = scene.cameraWaypoints;
-  const segCount = Math.max(1, wps.length - 1);
-  const scaled = u * segCount;
-  const segIdx = Math.min(segCount - 1, Math.floor(scaled));
-  const localT = smoothstep(0, 1, scaled - segIdx);
+  const beats = scene.beats;
+  if (!beats || beats.length === 0) {
+    return {
+      pos: [scene.worldPos[0] + 5, scene.worldPos[1] + 2.8, scene.worldPos[2] + 5.8],
+      look: scene.worldPos,
+    };
+  }
 
-  const wpA = wps[segIdx];
-  const wpB = wps[Math.min(wps.length - 1, segIdx + 1)];
+  let bIdx = beats.findIndex((b) => tSec >= b.startSec && tSec <= b.endSec);
+  if (bIdx === -1) bIdx = beats.length - 1;
 
-  const driftX = Math.sin(frame * 0.014) * 0.16;
-  const driftY = Math.cos(frame * 0.011) * 0.09;
+  const currBeat = beats[bIdx];
+  const nextBeat = beats[Math.min(beats.length - 1, bIdx + 1)];
+  const bDur = Math.max(0.1, currBeat.endSec - currBeat.startSec);
+  const localU = Math.max(0, Math.min(1, (tSec - currBeat.startSec) / bDur));
+  // Smoothly sweep between current beat camera and next beat camera during the second half of the beat
+  const glideU = smoothstep(0.15, 0.95, localU);
+
+  const driftX = Math.sin(frame * 0.02) * 0.14;
+  const driftY = Math.cos(frame * 0.016) * 0.08;
   const pull = isVertical ? 1.16 : 1.0;
 
   return {
     pos: [
-      scene.worldPos[0] + lerp(wpA.offset[0], wpB.offset[0], localT) * pull + driftX,
-      scene.worldPos[1] + lerp(wpA.offset[1], wpB.offset[1], localT) + driftY,
-      scene.worldPos[2] + lerp(wpA.offset[2], wpB.offset[2], localT) * pull,
+      scene.worldPos[0] + lerp(currBeat.cameraOffset[0], nextBeat.cameraOffset[0], glideU) * pull + driftX,
+      scene.worldPos[1] + lerp(currBeat.cameraOffset[1], nextBeat.cameraOffset[1], glideU) + driftY,
+      scene.worldPos[2] + lerp(currBeat.cameraOffset[2], nextBeat.cameraOffset[2], glideU) * pull,
     ],
     look: [
-      scene.worldPos[0] + lerp(wpA.lookOffset[0], wpB.lookOffset[0], localT),
-      scene.worldPos[1] + lerp(wpA.lookOffset[1], wpB.lookOffset[1], localT),
-      scene.worldPos[2] + lerp(wpA.lookOffset[2], wpB.lookOffset[2], localT),
+      scene.worldPos[0] + lerp(currBeat.lookOffset[0], nextBeat.lookOffset[0], glideU),
+      scene.worldPos[1] + lerp(currBeat.lookOffset[1], nextBeat.lookOffset[1], glideU),
+      scene.worldPos[2] + lerp(currBeat.lookOffset[2], nextBeat.lookOffset[2], glideU),
     ],
   };
 }
@@ -1942,7 +2652,7 @@ function computeContinuousCamera(
 ): CameraState {
   const scenes = plan.scenes;
   if (scenes.length === 0) {
-    return { camPos: [0, 2, 7], lookAt: [0, 0, 0], bgHex: "#08101E", accentHex: "#22D3EE" };
+    return { camPos: [0, 2, 7], lookAt: [0, 0, 0], bgHex: "#0E1729", accentHex: "#22D3EE" };
   }
 
   let activeIdx = scenes.findIndex((s) => tSec >= s.startSec && tSec <= s.endSec);
@@ -1950,7 +2660,7 @@ function computeContinuousCamera(
 
   const current = scenes[activeIdx];
   const currSample = sampleSceneCamera(current, tSec, frame, isVertical);
-  const halfWin = isVertical ? 0.9 : 1.15;
+  const halfWin = isVertical ? 0.75 : 0.95;
 
   if (activeIdx < scenes.length - 1) {
     const distToEnd = current.endSec - tSec;
@@ -2024,18 +2734,17 @@ const CameraController: React.FC<{ camPos: [number, number, number]; lookAt: [nu
   return null;
 };
 
-const AmbientParticleField: React.FC<{
+const SubtleDustField: React.FC<{
   camPos: [number, number, number];
   accentHex: string;
   frame: number;
 }> = ({ camPos, accentHex, frame }) => {
   const seeds = useMemo(
     () =>
-      Array.from({ length: 65 }).map((_, i) => ({
+      Array.from({ length: 24 }).map((_, i) => ({
         x: ((i * 7.31) % 24) - 12,
         y: ((i * 5.17) % 14) - 7,
         z: ((i * 11.43) % 24) - 12,
-        size: 0.024 + (i % 4) * 0.01,
       })),
     []
   );
@@ -2056,8 +2765,8 @@ const AmbientParticleField: React.FC<{
             wrap(s.z, camPos[2], 24),
           ]}
         >
-          <sphereGeometry args={[s.size, 6, 6]} />
-          <meshStandardMaterial color={accentHex} emissive={accentHex} emissiveIntensity={1.5} />
+          <sphereGeometry args={[0.015, 6, 6]} />
+          <meshStandardMaterial color={accentHex} emissive={accentHex} emissiveIntensity={1.1} />
         </mesh>
       ))}
     </group>
@@ -2072,7 +2781,7 @@ export const Continuous3DWorld: React.FC<{ plan: DocumentaryPlan }> = ({ plan })
 
   const camState = computeContinuousCamera(plan, tSec, frame, isVertical);
   const visibleScenes = plan.scenes.filter(
-    (s) => tSec >= s.startSec - 2.4 && tSec <= s.endSec + 2.4
+    (s) => tSec >= s.startSec - 2.2 && tSec <= s.endSec + 2.2
   );
 
   return (
@@ -2083,23 +2792,29 @@ export const Continuous3DWorld: React.FC<{ plan: DocumentaryPlan }> = ({ plan })
       gl={{ antialias: true, powerPreference: "high-performance" }}
     >
       <color attach="background" args={[camState.bgHex]} />
-      <fog attach="fog" args={[camState.bgHex, 8.5, 19.5]} />
+      <fog attach="fog" args={[camState.bgHex, 9.5, 20.5]} />
 
       <CameraController camPos={camState.camPos} lookAt={camState.lookAt} />
 
-      <ambientLight intensity={0.7} />
+      {/* 3-Point Studio + Hemisphere Lighting so every wall, fin & edge pops cleanly */}
+      <hemisphereLight args={["#CBD5E1", "#23324A", 1.15]} />
       <directionalLight
-        position={[camState.camPos[0] + 6, camState.camPos[1] + 9, camState.camPos[2] + 5]}
-        intensity={1.7}
-        color="#F8FAFC"
+        position={[camState.camPos[0] + 8, camState.camPos[1] + 12, camState.camPos[2] + 7]}
+        intensity={2.1}
+        color="#FFFFFF"
+      />
+      <directionalLight
+        position={[camState.camPos[0] - 9, camState.camPos[1] + 5, camState.camPos[2] - 8]}
+        intensity={1.45}
+        color="#7DD3FC"
       />
       <pointLight
-        position={[camState.lookAt[0] - 4, camState.lookAt[1] + 3, camState.lookAt[2] + 2]}
-        intensity={1.45}
+        position={[camState.lookAt[0] - 3.5, camState.lookAt[1] + 3, camState.lookAt[2] + 3]}
+        intensity={1.65}
         color={camState.accentHex}
       />
 
-      <AmbientParticleField camPos={camState.camPos} accentHex={camState.accentHex} frame={frame} />
+      <SubtleDustField camPos={camState.camPos} accentHex={camState.accentHex} frame={frame} />
 
       {visibleScenes.map((scene) => {
         const Comp = SCENE_REGISTRY[scene.id];
@@ -2123,37 +2838,309 @@ export const Continuous3DWorld: React.FC<{ plan: DocumentaryPlan }> = ({ plan })
 };
 '''
 
+FILES["src/components/HudOverlay.tsx"] = r'''
+import React from "react";
+import { loadFont as loadSpaceGrotesk } from "@remotion/google-fonts/SpaceGrotesk";
+import { loadFont as loadJetBrainsMono } from "@remotion/google-fonts/JetBrainsMono";
+import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import type { DocumentaryPlan, HudCallout, StatCounter, SubtitleChunk } from "../types";
+
+const { fontFamily: DISPLAY_FONT } = loadSpaceGrotesk("normal", {
+  weights: ["700"],
+  subsets: ["latin"],
+});
+
+const { fontFamily: MONO_FONT } = loadJetBrainsMono("normal", {
+  weights: ["600", "700"],
+  subsets: ["latin"],
+});
+
+function formatCounterValue(val: number, decimals = 0, prefix = "", suffix = ""): string {
+  const rounded = decimals > 0 ? Number(val.toFixed(decimals)) : Math.round(val);
+  return `${prefix}${rounded.toLocaleString("en-US")}${suffix}`;
+}
+
+const CalloutLayer: React.FC<{
+  callouts: HudCallout[];
+  accentHex: string;
+  localBeatFrame: number;
+  beatDurFrames: number;
+  fps: number;
+  width: number;
+  height: number;
+}> = ({ callouts, accentHex, localBeatFrame, beatDurFrames, fps, width, height }) => {
+  const enter = spring({
+    frame: localBeatFrame,
+    fps,
+    config: { damping: 18, stiffness: 170, mass: 0.8 },
+  });
+  const exitOpacity = interpolate(
+    localBeatFrame,
+    [Math.max(0, beatDurFrames - 10), beatDurFrames],
+    [1, 0],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+  );
+
+  return (
+    <AbsoluteFill style={{ pointerEvents: "none", opacity: exitOpacity }}>
+      <svg width={width} height={height} style={{ position: "absolute", inset: 0 }}>
+        {callouts.map((c, idx) => {
+          const ax = (c.anchorPct[0] / 100) * width;
+          const ay = (c.anchorPct[1] / 100) * height;
+          const bx = (c.boxPct[0] / 100) * width;
+          const by = (c.boxPct[1] / 100) * height;
+          const ex = bx + (ax - bx) * 0.45;
+          const ey = by;
+          const pathLen = Math.hypot(ex - bx, ey - by) + Math.hypot(ax - ex, ay - ey);
+          const dashOffset = pathLen * (1 - enter);
+
+          return (
+            <g key={idx}>
+              <path
+                d={`M ${bx} ${by} L ${ex} ${ey} L ${ax} ${ay}`}
+                fill="none"
+                stroke={accentHex}
+                strokeWidth={2.5}
+                strokeDasharray={pathLen}
+                strokeDashoffset={dashOffset}
+                strokeLinecap="round"
+              />
+              <circle cx={ax} cy={ay} r={6 * enter} fill={accentHex} />
+              <circle cx={ax} cy={ay} r={13 * enter} fill="none" stroke={accentHex} strokeWidth={1.5} opacity={0.5} />
+            </g>
+          );
+        })}
+      </svg>
+
+      {callouts.map((c, idx) => {
+        const bx = (c.boxPct[0] / 100) * width;
+        const by = (c.boxPct[1] / 100) * height;
+        const alignRight = c.boxPct[0] > 55;
+        return (
+          <div
+            key={idx}
+            style={{
+              position: "absolute",
+              left: alignRight ? undefined : bx,
+              right: alignRight ? width - bx : undefined,
+              top: by - 22,
+              transform: `scale(${0.88 + 0.12 * enter})`,
+              opacity: enter,
+              padding: "8px 16px",
+              borderRadius: 8,
+              backgroundColor: "rgba(15, 23, 42, 0.88)",
+              border: `1.5px solid ${accentHex}`,
+              boxShadow: `0 8px 24px rgba(0, 0, 0, 0.45)`,
+              fontFamily: MONO_FONT,
+              fontSize: width < height ? 20 : 21,
+              fontWeight: 700,
+              letterSpacing: "0.06em",
+              color: "#F8FAFC",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {c.label}
+          </div>
+        );
+      })}
+    </AbsoluteFill>
+  );
+};
+
+const StatCounterCard: React.FC<{
+  stat: StatCounter;
+  accentHex: string;
+  frame: number;
+  triggerFrame: number;
+  beatEndFrame: number;
+  fps: number;
+  isVertical: boolean;
+}> = ({ stat, accentHex, frame, triggerFrame, beatEndFrame, fps, isVertical }) => {
+  const animFrame = Math.max(0, frame - triggerFrame);
+  const progress = spring({
+    frame: animFrame,
+    fps,
+    config: { damping: 20, stiffness: 120, mass: 0.9 },
+  });
+  const fadeOut = interpolate(frame, [Math.max(0, beatEndFrame - 10), beatEndFrame], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+
+  const currentVal = stat.fromVal + (stat.toVal - stat.fromVal) * progress;
+  const formatted = formatCounterValue(currentVal, stat.decimals ?? 0, stat.prefix ?? "", stat.suffix ?? "");
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: isVertical ? 48 : 64,
+        top: isVertical ? 96 : 52,
+        opacity: Math.min(1, animFrame / 5) * fadeOut,
+        transform: `translateY(${(1 - progress) * 18}px)`,
+        padding: "16px 26px",
+        borderRadius: 14,
+        backgroundColor: "rgba(15, 23, 42, 0.88)",
+        border: `1.5px solid ${accentHex}`,
+        boxShadow: "0 18px 40px rgba(0, 0, 0, 0.55)",
+      }}
+    >
+      <div
+        style={{
+          fontFamily: MONO_FONT,
+          fontSize: isVertical ? 18 : 17,
+          fontWeight: 700,
+          letterSpacing: "0.1em",
+          color: "#94A3B8",
+          marginBottom: 6,
+        }}
+      >
+        {stat.label}
+      </div>
+      <div
+        style={{
+          fontFamily: MONO_FONT,
+          fontSize: isVertical ? 54 : 58,
+          fontWeight: 700,
+          fontVariantNumeric: "tabular-nums",
+          lineHeight: 1.0,
+          color: accentHex,
+        }}
+      >
+        {formatted}
+      </div>
+    </div>
+  );
+};
+
+const SubtitleBanner: React.FC<{
+  chunk: SubtitleChunk;
+  accentHex: string;
+  isVertical: boolean;
+}> = ({ chunk, accentHex, isVertical }) => (
+  <div
+    style={{
+      position: "absolute",
+      left: "50%",
+      bottom: isVertical ? 160 : 46,
+      transform: "translateX(-50%)",
+      maxWidth: isVertical ? "88%" : "72%",
+      padding: "10px 24px",
+      borderRadius: 12,
+      backgroundColor: "rgba(10, 16, 30, 0.78)",
+      border: "1px solid rgba(255, 255, 255, 0.12)",
+      textAlign: "center",
+      lineHeight: 1.25,
+    }}
+  >
+    <span
+      style={{
+        fontFamily: DISPLAY_FONT,
+        fontSize: isVertical ? 40 : 38,
+        fontWeight: 700,
+        letterSpacing: "-0.01em",
+      }}
+    >
+      {chunk.words.map((w, wi) => (
+        <span
+          key={wi}
+          style={{
+            color: w.highlight ? accentHex : "#F8FAFC",
+            marginRight: wi === chunk.words.length - 1 ? 0 : 10,
+            textShadow: "0 3px 12px rgba(0,0,0,0.85)",
+          }}
+        >
+          {w.text}
+        </span>
+      ))}
+    </span>
+  </div>
+);
+
+export const HudOverlay: React.FC<{ plan: DocumentaryPlan }> = ({ plan }) => {
+  const frame = useCurrentFrame();
+  const { width, height, fps } = useVideoConfig();
+  const tSec = frame / fps;
+  const isVertical = height > width;
+
+  const activeScene =
+    plan.scenes.find((s) => tSec >= s.startSec && tSec <= s.endSec) || plan.scenes[plan.scenes.length - 1];
+  const activeBeat =
+    activeScene?.beats.find((b) => tSec >= b.startSec && tSec <= b.endSec) ||
+    activeScene?.beats[activeScene.beats.length - 1];
+
+  const activeSubtitle = plan.subtitleChunks.find((c) => tSec >= c.startSec && tSec <= c.endSec);
+
+  if (!activeScene || !activeBeat) return null;
+
+  const beatStartFrame = Math.round(activeBeat.startSec * fps);
+  const beatEndFrame = Math.round(activeBeat.endSec * fps);
+  const localBeatFrame = Math.max(0, frame - beatStartFrame);
+  const beatDurFrames = Math.max(15, beatEndFrame - beatStartFrame);
+
+  // Trigger counter on beat start or nearest peak within first 40% of beat so counter finishes smoothly
+  const rawTrigFrame = Math.round(activeBeat.triggerSec * fps);
+  const triggerFrame = Math.min(rawTrigFrame, beatStartFrame + Math.round(beatDurFrames * 0.35));
+
+  return (
+    <AbsoluteFill style={{ pointerEvents: "none" }}>
+      {activeBeat.callouts?.length > 0 && (
+        <CalloutLayer
+          callouts={activeBeat.callouts}
+          accentHex={activeScene.accentHex}
+          localBeatFrame={localBeatFrame}
+          beatDurFrames={beatDurFrames}
+          fps={fps}
+          width={width}
+          height={height}
+        />
+      )}
+
+      {activeBeat.statCounter && (
+        <StatCounterCard
+          stat={activeBeat.statCounter}
+          accentHex={activeScene.accentHex}
+          frame={frame}
+          triggerFrame={triggerFrame}
+          beatEndFrame={beatEndFrame}
+          fps={fps}
+          isVertical={isVertical}
+        />
+      )}
+
+      {activeSubtitle && (
+        <SubtitleBanner chunk={activeSubtitle} accentHex={activeScene.accentHex} isVertical={isVertical} />
+      )}
+    </AbsoluteFill>
+  );
+};
+'''
+
 FILES["src/generated/scenes/Scene_01.tsx"] = r'''
 import React from "react";
 import {
   MatteBox,
-  MatteCylinder,
+  HardwareRack,
+  FinnedHousing,
+  PipeConduit,
   RevealSlideGroup,
-  SpinGroup,
-  FlowStream,
 } from "../../components/StudioKit";
 import type { DynamicSceneProps } from "../../types";
 
 export const Scene_01: React.FC<DynamicSceneProps> = ({ frame, progress, accentHex }) => {
   return (
     <group>
-      <MatteBox pos={[0, -0.7, 0]} size={[5.4, 0.2, 3.8]} color="#141C2B" />
-      <MatteBox pos={[0, 0.05, 0]} size={[3.6, 1.1, 2.2]} color="#243146" />
-      <RevealSlideGroup startPos={[0, 0, 0]} endPos={[0, 1.8, 0]} progress={progress} startAt={0.2} endAt={0.65}>
-        <MatteBox pos={[0, 0.65, 0]} size={[3.7, 0.14, 2.3]} color="#334155" />
-        <SpinGroup pos={[-0.9, 0.8, 0]} axis="y" speed={4.0} frame={frame}>
-          <MatteCylinder radiusTop={0.25} radiusBottom={0.25} height={0.12} color={accentHex} emissive={accentHex} />
-        </SpinGroup>
-        <SpinGroup pos={[0.9, 0.8, 0]} axis="y" speed={4.0} frame={frame}>
-          <MatteCylinder radiusTop={0.25} radiusBottom={0.25} height={0.12} color={accentHex} emissive={accentHex} />
-        </SpinGroup>
+      <MatteBox pos={[0, -1.0, 0]} size={[5.6, 0.22, 3.8]} color="#2B3B52" edgeColor={accentHex} />
+      <HardwareRack pos={[-1.4, 0.1, 0]} size={[1.1, 2.0, 1.1]} bays={6} accentHex={accentHex} frame={frame} />
+      <FinnedHousing pos={[1.2, 0.1, 0]} radius={0.85} height={1.8} finCount={8} accentHex={accentHex} cutaway={true} frame={frame} />
+      <RevealSlideGroup startPos={[0, 0, 0]} endPos={[0, 1.4, 0]} progress={progress} startAt={0.2} endAt={0.65}>
+        <MatteBox pos={[0, 1.2, 0]} size={[4.2, 0.16, 2.6]} color="#3B4E6B" edgeColor={accentHex} />
       </RevealSlideGroup>
-      <FlowStream
-        points={[[-2.6, -0.35, 0], [-0.9, -0.35, 0], [0.9, -0.35, 0], [2.6, -0.35, 0]]}
-        tubeColor="#1E293B"
-        particleColor={accentHex}
-        count={6}
-        speed={0.8}
+      <PipeConduit
+        points={[[-1.4, 0.3, 0.65], [-0.4, -0.1, 0.9], [0.4, -0.1, 0.9], [1.2, 0.3, 0.65]]}
+        fluidColor={accentHex}
+        flangeCount={3}
+        speed={0.85}
         frame={frame}
       />
     </group>
@@ -2179,25 +3166,43 @@ export const SCENE_PLAN: DocumentaryPlan = {
   fps: 30,
   width: 1920,
   height: 1080,
-  totalDurationSec: 10,
+  totalDurationSec: 8,
   hasAudio: false,
-  bpm: 96,
-  emphasisPeaksSec: [3, 7],
+  bpm: 102,
+  emphasisPeaksSec: [1.5, 5.2],
+  subtitleChunks: [],
   scenes: [
     {
       id: "scene_01",
       componentName: "Scene_01",
-      visualConcept: "Baseline AI Data Center Cutaway",
-      visualSpec: "Data center cutaway roof lift with glowing fiber flows",
+      visualConcept: "Multi-Part AI Rack & Cooling Core",
+      visualSpec: "HardwareRack paired with FinnedHousing and PipeConduit",
       startSec: 0,
-      endSec: 10,
+      endSec: 8,
       worldPos: [0, 0, 0],
-      bgHex: "#08101E",
+      bgHex: "#0E1729",
       accentHex: "#22D3EE",
-      cameraWaypoints: [
-        { offset: [5.5, 3.0, 6.0], lookOffset: [0, 0.2, 0] },
-        { offset: [0.5, 1.8, 4.2], lookOffset: [0, 0.1, 0] },
-        { offset: [-3.5, 2.2, 4.8], lookOffset: [0, 0, 0] },
+      beats: [
+        {
+          id: "b_01_01",
+          startSec: 0,
+          endSec: 4,
+          triggerSec: 0.4,
+          cameraOffset: [5.6, 3.0, 6.0],
+          lookOffset: [0, 0.2, 0],
+          callouts: [{ label: "600 kW / RACK", anchorPct: [42, 48], boxPct: [22, 26] }],
+          statCounter: { label: "CAMPUS POWER", fromVal: 0, toVal: 1000, suffix: " MW" },
+        },
+        {
+          id: "b_01_02",
+          startSec: 4,
+          endSec: 8,
+          triggerSec: 4.3,
+          cameraOffset: [1.8, 1.5, 3.8],
+          lookOffset: [0.2, 0.1, 0],
+          callouts: [{ label: "CLOSED-LOOP CDU", anchorPct: [58, 52], boxPct: [74, 28] }],
+          statCounter: null,
+        },
       ],
     },
   ],
@@ -2208,14 +3213,16 @@ FILES["src/generated/GeneratedTimeline.tsx"] = r'''
 import React from "react";
 import { AbsoluteFill } from "remotion";
 import { Continuous3DWorld } from "../components/Continuous3DWorld";
+import { HudOverlay } from "../components/HudOverlay";
 import { SCENE_PLAN } from "./ScenesData";
 
-export const GENERATED_TOTAL_FRAMES = 300;
+export const GENERATED_TOTAL_FRAMES = 240;
 
 export const GeneratedTimeline: React.FC = () => {
   return (
     <AbsoluteFill>
       <Continuous3DWorld plan={SCENE_PLAN} />
+      <HudOverlay plan={SCENE_PLAN} />
     </AbsoluteFill>
   );
 };
@@ -2228,7 +3235,7 @@ import { GeneratedTimeline } from "./generated/GeneratedTimeline";
 
 export const Main: React.FC = () => {
   return (
-    <AbsoluteFill style={{ backgroundColor: "#08101E" }}>
+    <AbsoluteFill style={{ backgroundColor: "#0E1729" }}>
       <GeneratedTimeline />
     </AbsoluteFill>
   );
@@ -2384,7 +3391,7 @@ jobs:
           npm install --no-audit --no-fund
           npx remotion browser ensure
 
-      - name: Step 1 - Audio Clean & Whisper Timestamps
+      - name: Step 1 - Audio Clean & Word-Level Whisper Timestamps
         if: steps.check_input.outputs.has_input == 'true'
         env:
           INPUT_FOLDER: "input"
@@ -2394,7 +3401,7 @@ jobs:
         run: |
           python scripts/analyze_audio.py
 
-      - name: Step 2 - Gemini Unlimited Dynamic 3D Scene Coder & Self-Healer
+      - name: Step 2 - Gemini Multi-Part 3D & HUD Scene Coder
         if: steps.check_input.outputs.has_input == 'true'
         env:
           INPUT_FOLDER: "input"
@@ -2404,7 +3411,7 @@ jobs:
         run: |
           python scripts/generate_scenes.py
 
-      - name: Step 3 - Validate Uniqueness, Zero Text & Zero Hard Cuts
+      - name: Step 3 - Validate Uniqueness, Beats & Continuity
         if: steps.check_input.outputs.has_input == 'true'
         run: |
           python scripts/validate_scenes.py
@@ -2480,7 +3487,7 @@ jobs:
           npm install --no-audit --no-fund
           npx remotion browser ensure
 
-      - name: Render Silent 3D Chunk ${{ matrix.chunk.idx }}
+      - name: Render Silent 3D + HUD Chunk ${{ matrix.chunk.idx }}
         run: |
           mkdir -p out
           npx remotion render build_bundle Main out/chunk_${{ matrix.chunk.idx }}.mp4 \
@@ -2492,7 +3499,7 @@ jobs:
             --crf=22 \
             --x264-preset=veryfast \
             --image-format=jpeg \
-            --jpeg-quality=88 \
+            --jpeg-quality=90 \
             --gl=swangle
 
       - name: Upload Rendered Chunk ${{ matrix.chunk.idx }}
@@ -2641,7 +3648,7 @@ jobs:
           npm install --no-audit --no-fund
           npx remotion browser ensure
 
-      - name: Step 1 - Clean Full X-Second Short Audio & Transcribe
+      - name: Step 1 - Clean Short Audio & Word Timestamps
         if: steps.check_input.outputs.has_input == 'true'
         env:
           INPUT_FOLDER: "input_short"
@@ -2651,7 +3658,7 @@ jobs:
         run: |
           python scripts/analyze_audio.py
 
-      - name: Step 2 - Gemini Vertical 9:16 3D Scene Coder & Self-Healer
+      - name: Step 2 - Gemini Vertical 9:16 Multi-Part 3D & HUD Coder
         if: steps.check_input.outputs.has_input == 'true'
         env:
           INPUT_FOLDER: "input_short"
@@ -2660,7 +3667,7 @@ jobs:
         run: |
           python scripts/generate_scenes.py
 
-      - name: Step 3 - Validate Uniqueness, Zero Text & Zero Hard Cuts
+      - name: Step 3 - Validate Uniqueness, Beats & Continuity
         if: steps.check_input.outputs.has_input == 'true'
         run: |
           python scripts/validate_scenes.py
@@ -2736,7 +3743,7 @@ jobs:
           npm install --no-audit --no-fund
           npx remotion browser ensure
 
-      - name: Render Vertical 9:16 Chunk ${{ matrix.chunk.idx }}
+      - name: Render Vertical 9:16 + HUD Chunk ${{ matrix.chunk.idx }}
         run: |
           mkdir -p out
           npx remotion render build_bundle Main out/chunk_${{ matrix.chunk.idx }}.mp4 \
@@ -2748,7 +3755,7 @@ jobs:
             --crf=22 \
             --x264-preset=veryfast \
             --image-format=jpeg \
-            --jpeg-quality=88 \
+            --jpeg-quality=90 \
             --gl=swangle
 
       - name: Upload Short Chunk ${{ matrix.chunk.idx }}
@@ -2832,10 +3839,10 @@ def run_git_push() -> None:
 
     git("add", ".")
     if git("diff", "--cached", "--quiet", check=False).returncode != 0:
-        git("commit", "-m", "Add dedicated 9:16 Shorts factory alongside 16:9 factory")
+        git("commit", "-m", "Upgrade to v3.0: CAD Edges, Multi-Part Hardware, 2D Remotion HUD & 3-4s Beats")
     if git("push", check=False).returncode != 0:
         git("push", "-u", "origin", "HEAD")
-    print("\n[setup_factory] SUCCESS! Both 16:9 and 9:16 factories are live on GitHub.")
+    print("\n[setup_factory] SUCCESS! v3.0 Factory is live on GitHub.")
 
 
 if __name__ == "__main__":
