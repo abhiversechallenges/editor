@@ -26,7 +26,6 @@ FLASH_LADDER = [
     ("gemma-4-31b-it", None, 8192, False),
 ]
 
-# Track models temporarily returning 503 during this process so later batches don't waste 10s each time
 _COOLDOWN_UNTIL: dict[str, float] = {}
 
 

@@ -94,8 +94,8 @@ def transcribe_audio(wav_path: Path) -> Dict[str, Any]:
         vad_filter=True,
         vad_parameters={"min_silence_duration_ms": 400},
         initial_prompt=(
-            "AI supercluster, Nvidia GPU, NVLink, InfiniBand, liquid cooling, cold plate, "
-            "data center, nuclear SMR, small modular reactor, substation, transformer, "
+            "AI supercluster, Nvidia GPU, NVLink, InfiniBand, liquid cooling, cold plates, "
+            "overheats, data center, nuclear SMR, small modular reactor, substation, transformer, "
             "345 kV, 600 kW, 1,000 MW, CDU, subsea fiber optic cable, battery farm, blackout."
         ),
     )

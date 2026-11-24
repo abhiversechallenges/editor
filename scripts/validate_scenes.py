@@ -39,6 +39,11 @@ def audit_plan(plan: Dict[str, Any]) -> List[str]:
         if not (SCENES_DIR / f"{cname}.tsx").exists():
             errors.append(f"Missing generated scene component: {cname}.tsx")
 
+    subtitles = plan.get("subtitleChunks") or []
+    for i in range(len(subtitles) - 1):
+        if float(subtitles[i]["endSec"]) > float(subtitles[i + 1]["startSec"]):
+            errors.append(f"Overlapping subtitleChunks at index {i} ({subtitles[i]['endSec']} > {subtitles[i+1]['startSec']}).")
+
     return errors
 
 
@@ -63,7 +68,7 @@ def main() -> None:
     if errs:
         raise SystemExit("[validate_scenes] FAILED:\n - " + "\n - ".join(errs))
     total_beats = sum(len(s.get("beats", [])) for s in plan["scenes"])
-    print(f"[validate_scenes] PASSED: {len(plan['scenes'])} scenes, {total_beats} visual beats, continuous camera + HUD.")
+    print(f"[validate_scenes] PASSED: {len(plan['scenes'])} scenes, {total_beats} visual beats, zero overlaps.")
 
 
 if __name__ == "__main__":

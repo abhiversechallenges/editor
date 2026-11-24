@@ -7,13 +7,9 @@ import type { V3 } from "../types";
 const safeVec = (v?: V3, fallback: V3 = [0, 0, 0]): V3 =>
   Array.isArray(v) && v.length === 3 ? [Number(v[0]) || 0, Number(v[1]) || 0, Number(v[2]) || 0] : fallback;
 
-const safeHex = (c?: string, fallback = "#334155"): string =>
+const safeHex = (c?: string, fallback = "#3B4E6B"): string =>
   typeof c === "string" && c.trim() ? c.trim() : fallback;
 
-/**
- * Prevents near-black architectural materials from vanishing against dark studio backgrounds.
- * Lifts ultra-dark colors cleanly up to readable slate (#2B3B52+) unless emissive.
- */
 const liftStructuralHex = (hex: string): string => {
   try {
     const c = new THREE.Color(hex);
@@ -90,7 +86,7 @@ export const MatteBox: React.FC<{
       </mesh>
       {edges && !emissive && (
         <lineSegments geometry={edgeGeo}>
-          <lineBasicMaterial color={safeHex(edgeColor)} transparent opacity={0.42} />
+          <lineBasicMaterial color={safeHex(edgeColor)} transparent opacity={0.44} />
         </lineSegments>
       )}
     </group>
@@ -389,6 +385,197 @@ export const HardwareRack: React.FC<{
   );
 };
 
+export const DataHallBuilding: React.FC<{
+  pos?: V3;
+  size?: V3;
+  accentHex?: string;
+  progress: number;
+  frame: number;
+}> = ({ pos, size = [3.2, 1.5, 2.2], accentHex = "#22D3EE", progress, frame }) => {
+  const [w, h, d] = safeVec(size, [3.2, 1.5, 2.2]);
+  const span = 0.45;
+  const raw = Math.max(0, Math.min(1, (progress - 0.18) / span));
+  const lift = raw * raw * (3 - 2 * raw) * 1.15;
+
+  return (
+    <group position={safeVec(pos)}>
+      {/* Concrete Slab Base */}
+      <MatteBox pos={[0, -h * 0.52, 0]} size={[w * 1.12, 0.16, d * 1.15]} color="#334155" edgeColor={accentHex} />
+      {/* 4 Ribbed Concrete Walls (Open Top for Roof Cutaway) */}
+      <MatteBox pos={[0, 0, -d * 0.48]} size={[w, h, 0.14]} color="#475569" edgeColor={accentHex} />
+      <MatteBox pos={[0, 0, d * 0.48]} size={[w, h, 0.14]} color="#3B4E6B" edgeColor={accentHex} />
+      <MatteBox pos={[-w * 0.48, 0, 0]} size={[0.14, h, d]} color="#475569" edgeColor={accentHex} />
+      <MatteBox pos={[w * 0.48, 0, 0]} size={[0.14, h, d]} color="#475569" edgeColor={accentHex} />
+      {/* Vertical Concrete Pilaster Buttresses */}
+      {[-w * 0.3, 0, w * 0.3].map((px, i) => (
+        <MatteBox key={i} pos={[px, 0, d * 0.53]} size={[0.18, h * 1.02, 0.1]} color="#64748B" edgeColor={accentHex} />
+      ))}
+      {/* Glowing Internal Racks Revealed Inside */}
+      {[-w * 0.25, 0, w * 0.25].map((rx, ri) => (
+        <HardwareRack key={ri} pos={[rx, -0.05, 0]} size={[w * 0.2, h * 0.82, d * 0.65]} bays={4} accentHex={accentHex} frame={frame} />
+      ))}
+      {/* Lifting Cutaway Roof Slab + Rooftop Chillers */}
+      <group position={[0, h * 0.54 + lift, 0]}>
+        <MatteBox size={[w * 1.04, 0.14, d * 1.04]} color="#64748B" edgeColor={accentHex} />
+        {[-w * 0.28, 0, w * 0.28].map((cx, ci) => (
+          <MatteBox key={ci} pos={[cx, 0.16, 0]} size={[0.45, 0.2, d * 0.55]} color="#3B4E6B" edgeColor={accentHex} />
+        ))}
+      </group>
+    </group>
+  );
+};
+
+export const CitySkylineBlock: React.FC<{
+  pos?: V3;
+  scale?: number;
+  accentHex?: string;
+  frame: number;
+}> = ({ pos, scale = 1, accentHex = "#F59E0B", frame }) => {
+  const towers: { x: number; z: number; w: number; h: number; d: number }[] = [
+    { x: -0.9, z: -0.4, w: 0.42, h: 1.5, d: 0.42 },
+    { x: -0.35, z: 0.1, w: 0.5, h: 2.2, d: 0.5 },
+    { x: 0.25, z: -0.25, w: 0.46, h: 1.85, d: 0.46 },
+    { x: 0.85, z: 0.2, w: 0.4, h: 1.3, d: 0.4 },
+    { x: -0.55, z: 0.65, w: 0.36, h: 1.1, d: 0.36 },
+    { x: 0.45, z: 0.65, w: 0.44, h: 1.6, d: 0.44 },
+  ];
+
+  return (
+    <group position={safeVec(pos)} scale={[scale, scale, scale]}>
+      <MatteBox pos={[0, -0.82, 0]} size={[2.7, 0.14, 2.0]} color="#2F4059" edgeColor={accentHex} />
+      {towers.map((t, i) => {
+        const flicker = 1.0 + 0.45 * Math.sin((frame / 30) * 3.0 + i * 1.1);
+        return (
+          <group key={i} position={[t.x, -0.75 + t.h * 0.5, t.z]}>
+            <MatteBox size={[t.w, t.h, t.d]} color="#3B4E6B" edgeColor="#7DD3FC" />
+            {[0.25, 0, -0.25].map((wy, wi) => (
+              <MatteBox
+                key={wi}
+                pos={[0, wy * t.h, t.d * 0.51]}
+                size={[t.w * 0.72, 0.09, 0.02]}
+                color={accentHex}
+                emissive={accentHex}
+                emissiveIntensity={flicker}
+                edges={false}
+              />
+            ))}
+          </group>
+        );
+      })}
+    </group>
+  );
+};
+
+export const PowerPylon: React.FC<{
+  pos?: V3;
+  height?: number;
+  accentHex?: string;
+}> = ({ pos, height = 2.4, accentHex = "#F59E0B" }) => (
+  <group position={safeVec(pos)}>
+    <MatteBox pos={[0, -height * 0.48, 0]} size={[0.9, 0.14, 0.9]} color="#334155" edgeColor={accentHex} />
+    <MatteCylinder
+      pos={[0, 0, 0]}
+      radiusTop={0.14}
+      radiusBottom={0.44}
+      height={height}
+      segments={4}
+      color="#64748B"
+      edgeColor={accentHex}
+    />
+    {[height * 0.2, height * 0.38].map((cy, ci) => {
+      const span = ci === 0 ? 1.55 : 1.15;
+      return (
+        <group key={ci} position={[0, cy, 0]}>
+          <MatteBox size={[span, 0.08, 0.14]} color="#94A3B8" edgeColor={accentHex} />
+          {[-span * 0.45, span * 0.45].map((ix, ii) => (
+            <MatteCylinder
+              key={ii}
+              pos={[ix, -0.14, 0]}
+              radiusTop={0.05}
+              radiusBottom={0.07}
+              height={0.22}
+              color={accentHex}
+              emissive={accentHex}
+              emissiveIntensity={1.6}
+              edges={false}
+            />
+          ))}
+        </group>
+      );
+    })}
+  </group>
+);
+
+export const CoolingTower: React.FC<{
+  pos?: V3;
+  radius?: number;
+  height?: number;
+  accentHex?: string;
+  cutaway?: boolean;
+  frame: number;
+}> = ({ pos, radius = 0.95, height = 2.2, accentHex = "#38BDF8", cutaway = true, frame }) => {
+  const segH = height / 3;
+  const spin = (frame / 30) * 5.0;
+
+  return (
+    <group position={safeVec(pos)}>
+      <MatteCylinder pos={[0, -height * 0.48, 0]} radiusTop={radius * 1.15} radiusBottom={radius * 1.18} height={0.14} color="#334155" edgeColor={accentHex} />
+      {[
+        { y: -segH, rTop: radius * 0.85, rBot: radius * 1.08 },
+        { y: 0, rTop: radius * 0.72, rBot: radius * 0.85 },
+        { y: segH, rTop: radius * 0.8, rBot: radius * 0.72 },
+      ].map((seg, i) => (
+        <MatteCylinder
+          key={i}
+          pos={[0, seg.y, 0]}
+          radiusTop={seg.rTop}
+          radiusBottom={seg.rBot}
+          height={segH + 0.02}
+          openEnded={true}
+          thetaStart={cutaway ? 0.55 : 0}
+          thetaLength={cutaway ? Math.PI * 1.38 : Math.PI * 2}
+          doubleSide={true}
+          color="#475569"
+          edgeColor={accentHex}
+        />
+      ))}
+      <MatteCylinder pos={[0, -height * 0.4, 0]} radiusTop={radius * 0.96} radiusBottom={radius * 0.96} height={0.14} color={accentHex} emissive={accentHex} emissiveIntensity={1.4} edges={false} />
+      <group position={[0, -height * 0.12, 0]} rotation={[0, spin, 0]}>
+        <MatteBox size={[radius * 1.25, 0.06, 0.16]} color="#CBD5E1" edgeColor={accentHex} />
+        <MatteBox size={[0.16, 0.06, radius * 1.25]} color="#CBD5E1" edgeColor={accentHex} />
+      </group>
+      <RisingParticles origin={[0, height * 0.45, 0]} spread={radius * 0.55} height={1.4} count={8} size={0.16} color="#E2E8F0" speed={0.45} frame={frame} />
+    </group>
+  );
+};
+
+export const BatteryContainer: React.FC<{
+  pos?: V3;
+  size?: V3;
+  accentHex?: string;
+  frame: number;
+}> = ({ pos, size = [1.5, 1.3, 1.1], accentHex = "#10B981", frame }) => {
+  const [w, h, d] = safeVec(size, [1.5, 1.3, 1.1]);
+  const charge = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin((frame / 30) * 2.2));
+  return (
+    <group position={safeVec(pos)}>
+      <MatteBox size={[w, h, d]} color="#475569" edgeColor={accentHex} />
+      <MatteBox pos={[0, h * 0.55, 0]} size={[w * 0.72, 0.14, d * 0.72]} color="#64748B" edgeColor={accentHex} />
+      {[-w * 0.25, 0, w * 0.25].map((vx, i) => (
+        <MatteBox key={i} pos={[vx, 0.05, d * 0.51]} size={[w * 0.14, h * 0.65, 0.03]} color="#2B3B52" />
+      ))}
+      <MatteBox
+        pos={[w * 0.38, -h * 0.38 + charge * h * 0.38, d * 0.52]}
+        size={[0.14, Math.max(0.14, charge * h * 0.75), 0.04]}
+        color={accentHex}
+        emissive={accentHex}
+        emissiveIntensity={1.9}
+        edges={false}
+      />
+    </group>
+  );
+};
+
 export const FinnedHousing: React.FC<{
   pos?: V3;
   rot?: V3;
@@ -415,69 +602,17 @@ export const FinnedHousing: React.FC<{
 
   return (
     <group position={safeVec(pos)} rotation={safeVec(rot)}>
-      {/* Top and Bottom Bolted Flanges */}
-      <MatteCylinder
-        pos={[0, height * 0.48, 0]}
-        radiusTop={radius * 1.18}
-        radiusBottom={radius * 1.18}
-        height={0.14}
-        color="#64748B"
-        edgeColor={accentHex}
-      />
-      <MatteCylinder
-        pos={[0, -height * 0.48, 0]}
-        radiusTop={radius * 1.18}
-        radiusBottom={radius * 1.18}
-        height={0.14}
-        color="#64748B"
-        edgeColor={accentHex}
-      />
-      {/* Main Housing or Cutaway Shell */}
+      <MatteCylinder pos={[0, height * 0.48, 0]} radiusTop={radius * 1.18} radiusBottom={radius * 1.18} height={0.14} color="#64748B" edgeColor={accentHex} />
+      <MatteCylinder pos={[0, -height * 0.48, 0]} radiusTop={radius * 1.18} radiusBottom={radius * 1.18} height={0.14} color="#64748B" edgeColor={accentHex} />
       {cutaway ? (
         <>
-          <MatteCylinder
-            pos={[0, 0, 0]}
-            radiusTop={radius}
-            radiusBottom={radius}
-            height={height * 0.9}
-            thetaStart={0.5}
-            thetaLength={Math.PI * 1.35}
-            doubleSide={true}
-            color={color}
-            edgeColor={accentHex}
-          />
-          <GlassShell
-            pos={[0, 0, 0]}
-            shape="cylinder"
-            radius={radius * 0.96}
-            height={height * 0.88}
-            color={accentHex}
-            edgeColor={accentHex}
-            opacity={0.18}
-          />
+          <MatteCylinder pos={[0, 0, 0]} radiusTop={radius} radiusBottom={radius} height={height * 0.9} thetaStart={0.5} thetaLength={Math.PI * 1.35} doubleSide={true} color={color} edgeColor={accentHex} />
+          <GlassShell pos={[0, 0, 0]} shape="cylinder" radius={radius * 0.96} height={height * 0.88} color={accentHex} edgeColor={accentHex} opacity={0.18} />
         </>
       ) : (
-        <MatteCylinder
-          pos={[0, 0, 0]}
-          radiusTop={radius}
-          radiusBottom={radius}
-          height={height * 0.9}
-          color={color}
-          edgeColor={accentHex}
-        />
+        <MatteCylinder pos={[0, 0, 0]} radiusTop={radius} radiusBottom={radius} height={height * 0.9} color={color} edgeColor={accentHex} />
       )}
-      {/* Glowing Internal Core */}
-      <MatteCylinder
-        pos={[0, 0, 0]}
-        radiusTop={radius * 0.45}
-        radiusBottom={radius * 0.45}
-        height={height * 0.78}
-        color={accentHex}
-        emissive={accentHex}
-        emissiveIntensity={pulse}
-        edges={false}
-      />
-      {/* Radial Cooling Fins */}
+      <MatteCylinder pos={[0, 0, 0]} radiusTop={radius * 0.45} radiusBottom={radius * 0.45} height={height * 0.78} color={accentHex} emissive={accentHex} emissiveIntensity={pulse} edges={false} />
       {Array.from({ length: safeFins }).map((_, fi) => {
         const a = (fi / safeFins) * Math.PI * 2;
         if (cutaway && a > 4.6 && a < 6.1) return null;
@@ -546,52 +681,24 @@ export const PipeConduit: React.FC<{
 
   return (
     <group>
-      {/* Translucent Outer Pipe Jacket */}
       <mesh>
         <tubeGeometry args={[curve, 40, tubeRadius, 12, false]} />
-        <meshStandardMaterial
-          color={safeHex(pipeColor)}
-          transparent
-          opacity={0.34}
-          roughness={0.22}
-          metalness={0.4}
-          depthWrite={false}
-        />
+        <meshStandardMaterial color={safeHex(pipeColor)} transparent opacity={0.34} roughness={0.22} metalness={0.4} depthWrite={false} />
       </mesh>
-      {/* Thin Inner Lumen Core */}
       <mesh>
         <tubeGeometry args={[curve, 40, tubeRadius * 0.28, 8, false]} />
-        <meshStandardMaterial
-          color={safeHex(fluidColor)}
-          emissive={safeHex(fluidColor)}
-          emissiveIntensity={0.65}
-        />
+        <meshStandardMaterial color={safeHex(fluidColor)} emissive={safeHex(fluidColor)} emissiveIntensity={0.65} />
       </mesh>
-      {/* Bolted Pipe Flange Collars */}
       {flanges.map((fl, fi) => (
-        <MatteCylinder
-          key={fi}
-          pos={fl.pos}
-          rot={fl.rot}
-          radiusTop={tubeRadius * 1.45}
-          radiusBottom={tubeRadius * 1.45}
-          height={0.07}
-          color="#64748B"
-          edgeColor={fluidColor}
-        />
+        <MatteCylinder key={fi} pos={fl.pos} rot={fl.rot} radiusTop={tubeRadius * 1.45} radiusBottom={tubeRadius * 1.45} height={0.07} color="#64748B" edgeColor={fluidColor} />
       ))}
-      {/* Fluid/Energy Capsules Traveling Inside Conduit */}
       {Array.from({ length: safeCount }).map((_, idx) => {
         const u = ((t + idx / safeCount) % 1 + 1) % 1;
         const pt = curve.getPoint(u);
         return (
           <mesh key={idx} position={[pt.x, pt.y, pt.z]}>
             <sphereGeometry args={[tubeRadius * 0.68, 10, 10]} />
-            <meshStandardMaterial
-              color={safeHex(fluidColor)}
-              emissive={safeHex(fluidColor)}
-              emissiveIntensity={2.1}
-            />
+            <meshStandardMaterial color={safeHex(fluidColor)} emissive={safeHex(fluidColor)} emissiveIntensity={2.1} />
           </mesh>
         );
       })}
@@ -622,33 +729,15 @@ export const HeatSinkArray: React.FC<{
 
   return (
     <group position={safeVec(pos)} rotation={safeVec(rot)}>
-      {/* Base Cold Plate */}
       <MatteBox pos={[0, -h * 0.36, 0]} size={[w, h * 0.24, d]} color={pipeColor} edgeColor="#FBBF24" />
-      {/* Parallel Cooling Fins */}
       {Array.from({ length: safeFins }).map((_, fi) => {
         const fx = -w * 0.45 + fi * step;
         return (
-          <MatteBox
-            key={fi}
-            pos={[fx, h * 0.08, 0]}
-            size={[step * 0.35, h * 0.72, d * 0.94]}
-            color={color}
-            edgeColor={glowColor}
-          />
+          <MatteBox key={fi} pos={[fx, h * 0.08, 0]} size={[step * 0.35, h * 0.72, d * 0.94]} color={color} edgeColor={glowColor} />
         );
       })}
-      {/* Twin Transverse Copper Heatpipes */}
       {[-d * 0.25, d * 0.25].map((pz, pi) => (
-        <MatteCylinder
-          key={pi}
-          pos={[0, h * 0.04, pz]}
-          rot={[0, 0, Math.PI / 2]}
-          radiusTop={0.07}
-          radiusBottom={0.07}
-          height={w * 1.12}
-          color={pipeColor}
-          edgeColor="#FDE68A"
-        />
+        <MatteCylinder key={pi} pos={[0, h * 0.04, pz]} rot={[0, 0, Math.PI / 2]} radiusTop={0.07} radiusBottom={0.07} height={w * 1.12} color={pipeColor} edgeColor="#FDE68A" />
       ))}
     </group>
   );
@@ -844,11 +933,7 @@ export const OrbitRing: React.FC<{
         return (
           <mesh key={i} position={[Math.cos(a) * radius, 0, Math.sin(a) * radius]}>
             <sphereGeometry args={[size, 10, 10]} />
-            <meshStandardMaterial
-              color={safeHex(color)}
-              emissive={safeHex(color)}
-              emissiveIntensity={1.9}
-            />
+            <meshStandardMaterial color={safeHex(color)} emissive={safeHex(color)} emissiveIntensity={1.9} />
           </mesh>
         );
       })}

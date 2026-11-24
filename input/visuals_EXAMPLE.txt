@@ -1,2 +1,1 @@
 # Upload your long voiceover.mp3 + visuals.txt inside input/ for a 16:9 (1920x1080) video!
-# Mention hardware parts, stats/numbers you want called out on the HUD, and visual flow.

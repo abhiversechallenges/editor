@@ -23,8 +23,8 @@ function sampleSceneCamera(
   const beats = scene.beats;
   if (!beats || beats.length === 0) {
     return {
-      pos: [scene.worldPos[0] + 5, scene.worldPos[1] + 2.8, scene.worldPos[2] + 5.8],
-      look: scene.worldPos,
+      pos: [scene.worldPos[0] + 3.8, scene.worldPos[1] + 2.0, scene.worldPos[2] + 4.3],
+      look: [scene.worldPos[0], scene.worldPos[1] + 0.3, scene.worldPos[2]],
     };
   }
 
@@ -35,12 +35,11 @@ function sampleSceneCamera(
   const nextBeat = beats[Math.min(beats.length - 1, bIdx + 1)];
   const bDur = Math.max(0.1, currBeat.endSec - currBeat.startSec);
   const localU = Math.max(0, Math.min(1, (tSec - currBeat.startSec) / bDur));
-  // Smoothly sweep between current beat camera and next beat camera during the second half of the beat
   const glideU = smoothstep(0.15, 0.95, localU);
 
-  const driftX = Math.sin(frame * 0.02) * 0.14;
-  const driftY = Math.cos(frame * 0.016) * 0.08;
-  const pull = isVertical ? 1.16 : 1.0;
+  const driftX = Math.sin(frame * 0.02) * 0.11;
+  const driftY = Math.cos(frame * 0.016) * 0.07;
+  const pull = isVertical ? 1.15 : 1.0;
 
   return {
     pos: [
@@ -71,7 +70,7 @@ function computeContinuousCamera(
 ): CameraState {
   const scenes = plan.scenes;
   if (scenes.length === 0) {
-    return { camPos: [0, 2, 7], lookAt: [0, 0, 0], bgHex: "#0E1729", accentHex: "#22D3EE" };
+    return { camPos: [0, 2, 5], lookAt: [0, 0.25, 0], bgHex: "#101B2E", accentHex: "#22D3EE" };
   }
 
   let activeIdx = scenes.findIndex((s) => tSec >= s.startSec && tSec <= s.endSec);
@@ -79,7 +78,7 @@ function computeContinuousCamera(
 
   const current = scenes[activeIdx];
   const currSample = sampleSceneCamera(current, tSec, frame, isVertical);
-  const halfWin = isVertical ? 0.75 : 0.95;
+  const halfWin = isVertical ? 0.75 : 0.9;
 
   if (activeIdx < scenes.length - 1) {
     const distToEnd = current.endSec - tSec;
@@ -153,45 +152,6 @@ const CameraController: React.FC<{ camPos: [number, number, number]; lookAt: [nu
   return null;
 };
 
-const SubtleDustField: React.FC<{
-  camPos: [number, number, number];
-  accentHex: string;
-  frame: number;
-}> = ({ camPos, accentHex, frame }) => {
-  const seeds = useMemo(
-    () =>
-      Array.from({ length: 24 }).map((_, i) => ({
-        x: ((i * 7.31) % 24) - 12,
-        y: ((i * 5.17) % 14) - 7,
-        z: ((i * 11.43) % 24) - 12,
-      })),
-    []
-  );
-
-  const wrap = (val: number, cam: number, span: number) => {
-    const rel = (((val - cam) % span) + span) % span;
-    return cam + rel - span / 2;
-  };
-
-  return (
-    <group>
-      {seeds.map((s, idx) => (
-        <mesh
-          key={idx}
-          position={[
-            wrap(s.x + frame * 0.008, camPos[0], 24),
-            wrap(s.y + Math.sin(frame * 0.02 + idx) * 0.25, camPos[1], 14),
-            wrap(s.z, camPos[2], 24),
-          ]}
-        >
-          <sphereGeometry args={[0.015, 6, 6]} />
-          <meshStandardMaterial color={accentHex} emissive={accentHex} emissiveIntensity={1.1} />
-        </mesh>
-      ))}
-    </group>
-  );
-};
-
 export const Continuous3DWorld: React.FC<{ plan: DocumentaryPlan }> = ({ plan }) => {
   const frame = useCurrentFrame();
   const { width, height, fps } = useVideoConfig();
@@ -203,37 +163,43 @@ export const Continuous3DWorld: React.FC<{ plan: DocumentaryPlan }> = ({ plan })
     (s) => tSec >= s.startSec - 2.2 && tSec <= s.endSec + 2.2
   );
 
+  // World-locked blueprint grid snapping every 1.0 unit so floor lines never slide during camera flight
+  const gridX = Math.round(camState.lookAt[0]);
+  const gridY = Math.round(camState.lookAt[1] - 1.35);
+  const gridZ = Math.round(camState.lookAt[2]);
+
   return (
     <ThreeCanvas
       width={width}
       height={height}
-      camera={{ fov: isVertical ? 52 : 40, near: 0.1, far: 45, position: camState.camPos }}
+      camera={{ fov: isVertical ? 50 : 38, near: 0.1, far: 45, position: camState.camPos }}
       gl={{ antialias: true, powerPreference: "high-performance" }}
     >
       <color attach="background" args={[camState.bgHex]} />
-      <fog attach="fog" args={[camState.bgHex, 9.5, 20.5]} />
+      <fog attach="fog" args={[camState.bgHex, 9.0, 20.5]} />
 
       <CameraController camPos={camState.camPos} lookAt={camState.lookAt} />
 
-      {/* 3-Point Studio + Hemisphere Lighting so every wall, fin & edge pops cleanly */}
-      <hemisphereLight args={["#CBD5E1", "#23324A", 1.15]} />
+      {/* Grounded Technical CAD Blueprint Floor Grid */}
+      <gridHelper args={[56, 56, "#1E4B68", "#1C2D46"]} position={[gridX, gridY, gridZ]} />
+
+      {/* 3-Point Studio + Hemisphere Lighting */}
+      <hemisphereLight args={["#E2E8F0", "#263750", 1.25]} />
       <directionalLight
         position={[camState.camPos[0] + 8, camState.camPos[1] + 12, camState.camPos[2] + 7]}
-        intensity={2.1}
+        intensity={2.2}
         color="#FFFFFF"
       />
       <directionalLight
         position={[camState.camPos[0] - 9, camState.camPos[1] + 5, camState.camPos[2] - 8]}
-        intensity={1.45}
+        intensity={1.5}
         color="#7DD3FC"
       />
       <pointLight
         position={[camState.lookAt[0] - 3.5, camState.lookAt[1] + 3, camState.lookAt[2] + 3]}
-        intensity={1.65}
+        intensity={1.7}
         color={camState.accentHex}
       />
-
-      <SubtleDustField camPos={camState.camPos} accentHex={camState.accentHex} frame={frame} />
 
       {visibleScenes.map((scene) => {
         const Comp = SCENE_REGISTRY[scene.id];

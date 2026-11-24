@@ -4,7 +4,7 @@ import { GeneratedTimeline } from "./generated/GeneratedTimeline";
 
 export const Main: React.FC = () => {
   return (
-    <AbsoluteFill style={{ backgroundColor: "#0E1729" }}>
+    <AbsoluteFill style={{ backgroundColor: "#101B2E" }}>
       <GeneratedTimeline />
     </AbsoluteFill>
   );

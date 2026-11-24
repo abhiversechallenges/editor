@@ -133,7 +133,7 @@ jobs:
         run: |
           python scripts/generate_scenes.py
 
-      - name: Step 3 - Validate Uniqueness, Beats & Continuity
+      - name: Step 3 - Validate Uniqueness, Beats & Zero Overlaps
         if: steps.check_input.outputs.has_input == 'true'
         run: |
           python scripts/validate_scenes.py
