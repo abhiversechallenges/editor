@@ -1,0 +1,26 @@
+Overall Look & Style:
+Stylized matte-3D engineering cutaway animation (smooth matte steel, copper, silicon, and glowing energy streams) against deep studio backdrops. Zero text on screen. Continuous gliding camera movement—never jump abruptly.
+
+Chapter 1 (When narrator talks about outside warehouse & peeling back the roof):
+Color mood: Deep obsidian navy (#08101E) with electric cyan accents (#22D3EE).
+Start wide looking over a huge AI data center campus with multiple buildings, perimeter fiber trenches pulsing cyan, and rooftop chiller units. Smoothly lift the main building's roof upward in a cutaway reveal as the camera glides inward.
+
+Chapter 2 (When narrator talks about endless corridors & optical highways):
+Color mood: Midnight steel blue (#0A1424) with sky blue (#38BDF8).
+Glide straight down a long central server aisle flanked by tall dark server racks blinking with horizontal LED blade rows. Above the racks, glowing overhead fiber trays carry rapid light packets streaming down both sides.
+
+Chapter 3 (When narrator talks about pulling out a single compute blade & 8 GPUs):
+Color mood: Dark graphite (#0C1220) with warm gold/cyan (#F59E0B).
+Show a multi-GPU supercomputer motherboard tray. Smoothly lift and explode the upper copper heatsink and golden bridge bars upward off the board, revealing 8 glowing GPU modules arranged in two neat rows underneath.
+
+Chapter 4 (When narrator talks about overheating silicon & liquid cooling cold plates):
+Color mood: Start warm thermal crimson (#160D12) with glowing fiery orange (#F97316), shifting smoothly toward cool aqua (#06B6D4).
+Close-up of a square central silicon processor die flanked by stacked memory blocks glowing hot red-orange with rising thermal heat orbs. Then smoothly slide a copper cold plate and twin curved cooling tubes down onto the chip, streaming fiery orange fluid out one side and bright cyan coolant in the other.
+
+Chapter 5 (When narrator talks about giant cooling towers & swirling mist):
+Color mood: Deep slate blue (#081622) with icy cyan (#38BDF8).
+Show twin cutaway hyperbolic cooling towers on a concrete base so the viewer can see the glowing blue cooling basin and massive spinning intake fans inside, with soft white vapor spheres continuously rising and drifting upward from the top rims.
+
+Chapter 6 (When narrator talks about substations, nuclear reactors & battery banks):
+Color mood: Deep emerald-navy (#071915) with vibrant emerald green (#10B981) and electric amber power pulses.
+Show a cutaway cylindrical nuclear reactor core glowing Cherenkov blue on one side connected by high-voltage transmission pylons and glowing power streams through a step-up transformer into rows of sleek utility battery containers charging up bright emerald green.
