@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-InfraVerse Unlimited Dynamic 3D Factory (v3.1).
-Fixes:
-  1. Closer hero camera framing (~60-70% fill) + grounded 3D blueprint floor grid + Frame-0 HUD visibility
-  2. Literal infrastructure prefabs (DataHallBuilding, CitySkylineBlock, PowerPylon, CoolingTower, BatteryContainer)
-  3. Zero callout truncation, automatic decimal precision inference, non-overlapping subtitle chunks, Whisper typo cleanup
-  4. Smarter phrase chunking + larger, better-positioned bottom HUD captions
+InfraVerse 2D Illustrated Documentary & Shorts Factory (v4.0).
+Modeled on Video 1's hand-inked 2D vector cartoon style:
+  - 11 switchable backdrop worlds controlled by visuals.txt while keeping unified 2D ink style
+  - Reusable CartoonCharacter2D rig (blinking, expressions, poses, sweat drops, hats/glasses)
+  - Video-1 mechanics: SplitScreen3Panel, TitleCard2D, LineChart2D, BalanceScale2D,
+    ConveyorBelt2D, WorldMapArc2D, QuoteHighlight2D, CalendarFlip2D, Stopwatch2D, InkCallout2D
+  - Built-in ReactorVessel2D, CoolingTower2D, ServerRack2D, Microchip2D, PowerPylon2D, BatteryBank2D + custom Gemini SVGs
+  - Tight word-level audio sync, zero visual repetition, continuous camera motion & human-style transitions
 """
 
 import subprocess
@@ -40,31 +42,26 @@ FILES[".gitattributes"] = r'''
 
 FILES["package.json"] = r'''
 {
-  "name": "infraverse-dynamic-3d-factory",
-  "version": "3.1.0",
+  "name": "infraverse-2d-cartoon-factory",
+  "version": "4.0.0",
   "private": true,
-  "description": "High-contrast CAD 3D + 2D Remotion HUD engineering documentary factory",
+  "description": "Video-1 style 2D vector cartoon & motion graphics documentary factory",
   "scripts": {
     "dev": "remotion studio src/index.ts",
     "build": "remotion bundle src/index.ts --public-dir public --out-dir build_bundle",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@react-three/drei": "9.120.4",
-    "@react-three/fiber": "8.17.10",
     "@remotion/cli": "4.0.543",
     "@remotion/google-fonts": "4.0.543",
-    "@remotion/three": "4.0.543",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "remotion": "4.0.543",
-    "three": "0.170.0"
+    "remotion": "4.0.543"
   },
   "devDependencies": {
     "@types/node": "22.13.0",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
-    "@types/three": "0.170.0",
     "typescript": "5.6.3"
   }
 }
@@ -102,18 +99,31 @@ FILES["remotion.config.ts"] = r'''
 import { Config } from "@remotion/cli/config";
 
 Config.setVideoImageFormat("jpeg");
-Config.setJpegQuality(90);
+Config.setJpegQuality(92);
 Config.setOffthreadVideoCacheSizeInBytes(1024 * 1024 * 1024);
 Config.setCodec("h264");
 Config.setPixelFormat("yuv420p");
 '''
 
 FILES["input/visuals_EXAMPLE.txt"] = r'''
-# Upload your long voiceover.mp3 + visuals.txt inside input/ for a 16:9 (1920x1080) video!
+# Control environments & visuals in plain English while keeping the unified 2D cartoon look!
+# Available environment moods:
+# night_mountains, sunset_horizon, daylight_city, graph_paper, notebook_lined,
+# world_map, warm_office, steel_vault, dark_industrial, news_document, split_3panel, black_title_card
+
+Example for Week 1 ($100B AI Data Center):
+- Start on night_mountains: Cartoon CEO sweating while holding up a huge glowing cracking AI chip, handwritten "$100B" callout.
+- Quick black_title_card: "Nobody noticed."
+- Cut to split_3panel daylight comic: Bank building, Power substation, City street with skyline.
+- Cut to graph_paper: Rising red power demand line chart going from 100 MW to 1,000 MW with city skyline below.
+- Cut to dark_industrial: Server corridor with blinking racks and conveyor belt stamping 2024 -> 2025 -> 2026 chips.
+- Cut to warm_office: Engineering report quote with yellow highlighter sweeping "LIQUID COOLING REQUIRED" and red circle.
+- Cut to steel_vault / sunset_horizon: Nuclear SMR reactor vessel + cooling towers + battery containers powering the grid.
 '''
 
 FILES["input_short/visuals_EXAMPLE.txt"] = r'''
-# Upload your X-second Short voiceover.mp3 + visuals.txt inside input_short/ for a 9:16 (1080x1920) Short!
+# Upload your X-second 9:16 Short voiceover.mp3 + visuals.txt inside input_short/!
+# Same 2D cartoon environments & characters, framed cleanly for vertical 1080x1920!
 '''
 
 for gitkeep_rel in (
@@ -123,7 +133,6 @@ for gitkeep_rel in (
     "work/.gitkeep",
     "public/audio/.gitkeep",
     "public/audio/sfx/.gitkeep",
-    "public/models/.gitkeep",
 ):
     FILES[gitkeep_rel] = ""
 
@@ -405,7 +414,7 @@ def transcribe_audio(wav_path: Path) -> Dict[str, Any]:
 
 
 def analyze_beats(wav_path: Path) -> Dict[str, Any]:
-    print("[analyze_audio] Detecting vocal emphasis peaks & tempo...")
+    print("[analyze_audio] Detecting vocal emphasis peaks & pauses...")
     y, sr = librosa.load(str(wav_path), sr=22050, mono=True)
     duration_sec = float(librosa.get_duration(y=y, sr=sr))
 
@@ -417,7 +426,7 @@ def analyze_beats(wav_path: Path) -> Dict[str, Any]:
     onset_norm = onset_env / (np.max(onset_env) + 1e-8)
     combined = 0.65 * rms_norm + 0.35 * onset_norm
 
-    min_distance = int((2.0 * sr) / hop_length)
+    min_distance = int((1.8 * sr) / hop_length)
     peaks, _ = find_peaks(
         combined,
         height=float(np.percentile(combined, 68)),
@@ -427,9 +436,9 @@ def analyze_beats(wav_path: Path) -> Dict[str, Any]:
     peak_times = [round(float(librosa.frames_to_time(p, sr=sr, hop_length=hop_length)), 3) for p in peaks]
 
     tempo, _ = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr, hop_length=hop_length)
-    bpm_val = float(np.atleast_1d(tempo)[0]) if np.size(tempo) > 0 else 102.0
+    bpm_val = float(np.atleast_1d(tempo)[0]) if np.size(tempo) > 0 else 104.0
     if bpm_val < 70 or bpm_val > 135:
-        bpm_val = 102.0
+        bpm_val = 104.0
 
     return {
         "duration_sec": round(duration_sec, 3),
@@ -489,113 +498,99 @@ from gemini_helper import clean_tsx_text, generate_with_fallback, get_client, pa
 
 ROOT = Path(__file__).resolve().parent.parent
 WORK_DIR = ROOT / "work"
-MODELS_DIR = ROOT / "public" / "models"
 GENERATED_DIR = ROOT / "src" / "generated"
 SCENES_DIR = GENERATED_DIR / "scenes"
 
-STUDIO_KIT_API_DOC = """
-Available components in "../../components/StudioKit" (and ONLY these imports are allowed):
+BACKDROP_THEMES = [
+    "night_mountains",
+    "sunset_horizon",
+    "daylight_city",
+    "graph_paper",
+    "notebook_lined",
+    "world_map",
+    "warm_office",
+    "steel_vault",
+    "dark_industrial",
+    "news_document",
+    "split_3panel",
+    "black_title_card",
+]
+
+CAMERA_MOVES = [
+    "push_in",
+    "pull_out",
+    "pan_right",
+    "pan_left",
+    "pan_up",
+    "shake_hit",
+]
+
+TRANSITIONS = [
+    "slide_left",
+    "slide_up",
+    "wipe_right",
+    "zoom_dissolve",
+    "flash_cut",
+]
+
+SFX_CUES = ["whoosh", "pop_snap", "marker_swipe", "sub_impact", "tick"]
+
+CARTOON_KIT_DOC = """
+Available components in "../../components/CartoonKit2D" (ONLY import React, CartoonKit2D, and Scene2DProps):
 import React from "react";
 import {
-  MatteBox, MatteCylinder, MatteSphere, MatteTorus, MatteCone,
-  HardwareRack, FinnedHousing, PipeConduit, HeatSinkArray, GlassShell,
-  DataHallBuilding, CitySkylineBlock, PowerPylon, CoolingTower, BatteryContainer,
-  SpinGroup, BobGroup, RevealSlideGroup, FlowStream, RisingParticles, OrbitRing, GlbModel
-} from "../../components/StudioKit";
-import type { DynamicSceneProps } from "../../types";
+  SceneBackdrop2D, Camera2D, CartoonCharacter2D, TitleCard2D,
+  InkCallout2D, LineChart2D, BarChart2D, PieChart2D, BalanceScale2D,
+  ConveyorBelt2D, WorldMapArc2D, QuoteHighlight2D, CalendarFlip2D, Stopwatch2D,
+  SplitScreen3Panel, ReactorVessel2D, CoolingTower2D, ServerRack2D,
+  Microchip2D, PowerPylon2D, BatteryBank2D, AnimatedPipe2D, ExplosionBurst2D
+} from "../../components/CartoonKit2D";
+import type { Scene2DProps } from "../../types";
 
-Props Reference (type V3 = [number, number, number]):
-- DynamicSceneProps: { frame: number; localFrame: number; progress: number; accentHex: string }
-- DataHallBuilding: { pos?: V3; size?: V3; accentHex?: string; progress: number; frame: number }
-  (Concrete-walled data center hall with structural pilasters & sliding cutaway roof revealing server racks inside!)
-- CitySkylineBlock: { pos?: V3; scale?: number; accentHex?: string; frame: number }
-  (Cluster of 11 varied skyscrapers with lit glowing windows — use whenever city/grid power is mentioned!)
-- PowerPylon: { pos?: V3; height?: number; accentHex?: string }
-  (Tapered steel transmission lattice tower with cross-arms and HV insulators)
-- CoolingTower: { pos?: V3; radius?: number; height?: number; accentHex?: string; cutaway?: boolean; frame: number }
-  (Tapered hyperbolic concrete cooling tower with spinning intake fan, blue water basin & rising vapor!)
-- BatteryContainer: { pos?: V3; size?: V3; accentHex?: string; frame: number }
-  (Utility Megapack battery container with side vents, HVAC pod & animated emerald/cyan charge bar!)
-- HardwareRack: { pos?: V3; rot?: V3; size?: V3; bays?: number; accentHex?: string; frame: number }
-- FinnedHousing: { pos?: V3; rot?: V3; radius?: number; height?: number; finCount?: number; color?: string; accentHex?: string; cutaway?: boolean; frame: number }
-- PipeConduit: { points: V3[]; tubeRadius?: number; pipeColor?: string; fluidColor?: string; flangeCount?: number; count?: number; speed?: number; frame: number }
-- HeatSinkArray: { pos?: V3; rot?: V3; size?: V3; finCount?: number; color?: string; pipeColor?: string; glowColor?: string }
-- GlassShell: { pos?: V3; rot?: V3; shape?: "box"|"cylinder"; size?: V3; radius?: number; height?: number; color?: string; edgeColor?: string; opacity?: number }
-- MatteBox / MatteCylinder / MatteSphere / MatteTorus / MatteCone
-- SpinGroup / BobGroup / RevealSlideGroup / FlowStream / RisingParticles / OrbitRing / GlbModel
+Props Reference (Coordinates operate inside a clean 1920x1080 SVG stage! Even on 9:16 Shorts, the camera frames smoothly, or use `isVertical` prop to stack vertically!):
+- Scene2DProps: { frame: number; localFrame: number; localTime: number; durationSec: number; progress: number; peakTimes: number[]; accentHex: string; backdropTheme: BackdropTheme; cameraMove: CameraMove2D; isVertical: boolean }
+- SceneBackdrop2D: { theme: BackdropTheme; frame: number; accentHex?: string }
+  (Always render SceneBackdrop2D first!)
+- Camera2D: { move: CameraMove2D; progress: number; frame: number; peakTimes?: number[]; localTime: number; children?: React.ReactNode }
+  (Wrap foreground visual content inside Camera2D so there is ALWAYS smooth continuous camera motion and punchy micro-shakes on vocal peaks!)
+- CartoonCharacter2D: { x: number; y: number; scale?: number; variant?: "ceo"|"engineer"|"worker"|"suit"|"operator"; mood?: "neutral"|"shocked"|"worried"|"happy"|"smug"|"angry"; pose?: "stand"|"point_right"|"point_up"|"hold_up"|"hands_head"|"celebrate"; glasses?: boolean; hardHat?: boolean; sweatDrop?: boolean; flip?: boolean; frame: number }
+- TitleCard2D: { text: string; progress: number; accentHex?: string }
+  (Use ONLY when theme is "black_title_card" — handwritten white Caveat marker text!)
+- InkCallout2D: { x: number; y: number; text: string; color?: string; fontSize?: number; delaySec?: number; localTime: number; rotateDeg?: number; arrowTo?: [number, number] }
+- LineChart2D: { x: number; y: number; w?: number; h?: number; label?: string; startVal?: number; endVal?: number; prefix?: string; suffix?: string; decimals?: number; color?: string; points?: number[]; progress: number }
+- BarChart2D: { x: number; y: number; w?: number; h?: number; bars: { label: string; value: number; color?: string }[]; multiplierTag?: string; suffix?: string; prefix?: string; progress: number }
+- PieChart2D: { x: number; y: number; radius?: number; slicePct: number; label: string; color?: string; progress: number }
+- BalanceScale2D: { x: number; y: number; leftLabel: string; rightLabel: string; tiltDeg?: number; leftColor?: string; rightColor?: string; progress: number }
+- ConveyorBelt2D: { x: number; y: number; w?: number; items: string[]; accentHex?: string; frame: number; progress: number }
+- WorldMapArc2D: { x: number; y: number; w?: number; h?: number; startPct?: [number, number]; endPct?: [number, number]; accentHex?: string; zoomLabel?: string; progress: number; frame: number }
+- QuoteHighlight2D: { x: number; y: number; w?: number; sourceTag: string; quoteBefore: string; highlightText: string; quoteAfter?: string; markStamp?: string; progress: number }
+- CalendarFlip2D: { x: number; y: number; pages: { month: string; day: string }[]; progress: number }
+- Stopwatch2D: { x: number; y: number; radius?: number; maxSecLabel?: string; progress: number }
+- SplitScreen3Panel: { progress: number; panel1: React.ReactNode; panel2: React.ReactNode; panel3: React.ReactNode }
+  (Reveals Panel 1 -> Panel 2 -> Panel 3 sequentially across progress 0..0.7 — use inside 1920x1080 viewBox!)
+- ReactorVessel2D: { x: number; y: number; scale?: number; accentHex?: string; frame: number; progress: number }
+- CoolingTower2D: { x: number; y: number; scale?: number; accentHex?: string; frame: number }
+- ServerRack2D: { x: number; y: number; scale?: number; accentHex?: string; frame: number }
+- Microchip2D: { x: number; y: number; scale?: number; color?: string; cracked?: boolean; overheating?: boolean; frame: number; progress: number }
+- PowerPylon2D: { x: number; y: number; scale?: number; accentHex?: string; frame: number }
+- BatteryBank2D: { x: number; y: number; scale?: number; accentHex?: string; frame: number; progress: number }
+- AnimatedPipe2D: { d: string; color?: string; fluidColor?: string; strokeWidth?: number; frame: number }
+  (Bold ink-outlined curved SVG pipe with dashed glowing fluid moving continuously!)
+- ExplosionBurst2D: { x: number; y: number; color?: string; triggerSec: number; localTime: number }
 
-STRICT HARDWARE & LITERAL VISUAL MATCHING RULES:
-1. Export EXACTLY `export const Scene_XX: React.FC<DynamicSceneProps> = ({ frame, localFrame, progress, accentHex }) => { ... }`.
-2. NEVER import `three`, `@react-three/fiber`, `remotion`, `useFrame`, `useState`, `useEffect`, or `<Text>` / `<Html>`.
-3. LITERALLY MATCH SPOKEN NOUNS:
-   - Concrete walls / data hall / roof cutaway -> use `DataHallBuilding`!
-   - City / electricity powering a city -> use `CitySkylineBlock` + `PowerPylon` + `PipeConduit`!
-   - Server racks / aisle -> use rows of `HardwareRack` + overhead `PipeConduit`!
-   - Chips / cold plates / heatsinks -> use `HeatSinkArray` + `PipeConduit` + `GlassShell`!
-   - Cooling towers / steam -> use `CoolingTower`!
-   - Nuclear reactor / turbine -> use `FinnedHousing` (`cutaway={true}`) + `SpinGroup` rotors + `PipeConduit`!
-   - Substations / batteries -> use `PowerPylon` + `BatteryContainer` + `PipeConduit`!
-4. Keep hero geometry compact around `[0, 0, 0]` (`X/Z` within `[-3.2 .. +3.2]`, base resting cleanly at `Y = -1.2`) so close camera angles frame it huge (60-70% of screen).
+STRICT RULES FOR SCENE COMPONENTS:
+1. Export EXACTLY `export const Scene_XX: React.FC<Scene2DProps> = (props) => { ... }`.
+2. Return a single `<svg viewBox="0 0 1920 1080" style={{ width: "100%", height: "100%", display: "block" }}>` (or if `isVertical`, compose cleanly inside `viewBox="0 0 1080 1920"` when building vertical, OR use `isVertical` to adjust positions! Even simpler: render `<SceneBackdrop2D theme={props.backdropTheme} frame={props.frame} accentHex={props.accentHex} />` and `<Camera2D move={props.cameraMove} progress={props.progress} frame={props.frame} peakTimes={props.peakTimes} localTime={props.localTime}>` inside an `<svg viewBox={props.isVertical ? "0 0 1080 1920" : "0 0 1920 1080"} style={{ width: "100%", height: "100%", display: "block" }}>`!).
+   CRITICAL: Notice `SceneBackdrop2D` and `Camera2D` return SVG `<g>` elements! Everything inside `<svg>` MUST be valid SVG (`<g>`, `<rect>`, `<circle>`, `<path>`, `<line>`, `<polygon>`, `<text>`) or `CartoonKit2D` components! NEVER put `<div>` inside `<svg>`!
+3. NEVER import `three`, `@react-three`, `remotion`, `useFrame`, `useEffect`, or `useState`.
+4. NEVER use hardcoded `id="..."` on `<linearGradient>` or `<clipPath>` inside generated scenes (use solid/rgba colors + bold `#111827` `strokeWidth={5}` black outlines for crisp Video 1 ink style!).
+5. NO bottom subtitle boxes! Use `InkCallout2D`, `QuoteHighlight2D`, `TitleCard2D`, charts, and expressive characters synced to `localTime` & `peakTimes`.
+6. EVERY scene MUST be alive on every frame (character blinking/moving, pipes flowing, charts drawing, clouds/stars moving, camera moving).
 """
 
-PALETTES = [
-    {"bgHex": "#101B2E", "accentHex": "#22D3EE"},
-    {"bgHex": "#13223A", "accentHex": "#38BDF8"},
-    {"bgHex": "#20161F", "accentHex": "#F97316"},
-    {"bgHex": "#102430", "accentHex": "#06B6D4"},
-    {"bgHex": "#13253E", "accentHex": "#60A5FA"},
-    {"bgHex": "#1F1912", "accentHex": "#F59E0B"},
-    {"bgHex": "#102822", "accentHex": "#10B981"},
-    {"bgHex": "#191732", "accentHex": "#818CF8"},
-]
-
-# Tighter, lower-pitch camera presets so 3D hardware fills 60-70% of the screen cleanly (zero top void!)
-BEAT_CAM_PRESETS_16_9 = [
-    [
-        {"offset": [3.8, 2.0, 4.3], "lookOffset": [0.0, 0.35, 0.0]},
-        {"offset": [1.6, 1.3, 3.0], "lookOffset": [0.15, 0.25, 0.0]},
-        {"offset": [-2.7, 1.7, 3.4], "lookOffset": [-0.1, 0.2, 0.0]},
-    ],
-    [
-        {"offset": [-3.6, 1.9, 4.1], "lookOffset": [0.0, 0.3, 0.0]},
-        {"offset": [-1.0, 1.1, 2.8], "lookOffset": [0.0, 0.3, 0.0]},
-        {"offset": [2.9, 1.6, 3.3], "lookOffset": [0.1, 0.2, 0.0]},
-    ],
-    [
-        {"offset": [0.6, 2.9, 4.4], "lookOffset": [0.0, 0.2, 0.0]},
-        {"offset": [2.8, 1.3, 2.9], "lookOffset": [0.0, 0.3, 0.0]},
-        {"offset": [-1.9, 1.0, 2.8], "lookOffset": [0.0, 0.25, 0.0]},
-    ],
-]
-
-BEAT_CAM_PRESETS_9_16 = [
-    [
-        {"offset": [3.7, 2.3, 4.9], "lookOffset": [0.0, 0.35, 0.0]},
-        {"offset": [1.1, 1.4, 3.6], "lookOffset": [0.0, 0.3, 0.0]},
-        {"offset": [-2.4, 1.8, 4.0], "lookOffset": [0.0, 0.2, 0.0]},
-    ],
-    [
-        {"offset": [-3.5, 2.1, 4.8], "lookOffset": [0.0, 0.3, 0.0]},
-        {"offset": [-0.8, 1.2, 3.5], "lookOffset": [0.0, 0.3, 0.0]},
-        {"offset": [2.5, 1.7, 3.9], "lookOffset": [0.0, 0.2, 0.0]},
-    ],
-]
-
-HIGHLIGHT_KEYWORDS = {
-    "ai", "gpu", "gpus", "nvidia", "blackwell", "nvlink", "infiniband", "chip", "chips",
-    "silicon", "die", "liquid", "cooling", "coolant", "copper", "water", "watts", "megawatts",
-    "gigawatts", "mw", "kw", "gw", "kv", "nuclear", "reactor", "reactors", "smr", "uranium",
-    "substation", "substations", "transformer", "transformers", "grid", "blackout", "battery",
-    "batteries", "megapack", "fiber", "subsea", "cable", "cables", "heat", "thermal",
-    "overheat", "overheats", "billion", "billions", "hundred", "thousand", "trillions", "data",
-    "center", "supercluster", "power", "electricity", "towers", "manifolds", "turbine",
-}
-
-DANGLING_END_WORDS = {"a", "an", "the", "to", "of", "in", "on", "at", "for", "with", "and", "or", "by", "as", "from", "into"}
-
 FORBIDDEN_CODE_PATTERNS = (
-    "<Text",
-    "<Html",
+    "<div",
+    "<span",
     "useFrame",
     "useEffect",
     "useState",
@@ -640,37 +635,31 @@ def load_visuals_prompt(input_dir: Path) -> str:
     return max(candidates, key=git_ts).read_text(encoding="utf-8").strip()
 
 
-def discover_custom_models() -> List[str]:
-    if not MODELS_DIR.exists():
-        return []
-    return sorted(p.name for p in MODELS_DIR.iterdir() if p.is_file() and p.suffix.lower() in {".glb", ".gltf"})
-
-
 def compute_scene_range(duration_sec: float, is_short: bool) -> tuple[int, int]:
     if is_short:
-        if duration_sec <= 22:
-            return 3, 5
+        if duration_sec <= 20:
+            return 4, 6
         if duration_sec <= 40:
-            return 5, 7
-        return 7, 10
+            return 6, 9
+        return 8, 12
     if duration_sec <= 25:
-        return 3, 4
+        return 4, 6
     if duration_sec <= 65:
-        return 6, 9
+        return 10, 14
     if duration_sec <= 150:
-        return 13, 17
+        return 18, 25
     if duration_sec <= 360:
-        return 22, 32
-    return 36, 48
+        return 34, 48
+    return 52, 72
 
 
-def snap_to_peak(target: float, peaks: List[float], min_val: float, max_val: float) -> float:
+def snap_to_boundary(target: float, boundaries: List[float], min_val: float, max_val: float) -> float:
     best = target
-    best_dist = 0.55
-    for p in peaks:
-        d = abs(p - target)
-        if d <= best_dist and min_val < p < max_val:
-            best = p
+    best_dist = 0.6
+    for b in boundaries:
+        d = abs(b - target)
+        if d <= best_dist and min_val < b < max_val:
+            best = b
             best_dist = d
     return round(best, 3)
 
@@ -681,172 +670,67 @@ def sanitize_hex(val: Any, fallback: str) -> str:
     return fallback
 
 
-def infer_decimals(val: float) -> int:
-    s = f"{val:.4f}".rstrip("0").rstrip(".")
-    return len(s.split(".")[1]) if "." in s else 0
+def build_safe_fallback_scene_tsx(
+    scene_num: int,
+    backdrop: str,
+    accent: str,
+    concept: str,
+    title_text: str,
+) -> str:
+    safe_comment = re.sub(r"[^A-Za-z0-9 ,.-]", "", concept)[:60]
+    safe_title = json.dumps(title_text or concept[:28])
+    variant = scene_num % 6
 
-
-def clean_word_boundary_label(raw_label: str, max_chars: int = 34) -> str:
-    words = raw_label.strip().upper().split()
-    out: List[str] = []
-    cur_len = 0
-    for w in words:
-        add_len = len(w) + (1 if out else 0)
-        if cur_len + add_len <= max_chars:
-            out.append(w)
-            cur_len += add_len
-        else:
-            break
-    if not out and words:
-        return words[0][:max_chars]
-    return " ".join(out)
-
-
-def clean_whisper_tokens(raw_words: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Merge Whisper hyphen artifacts (e.g. 'high' + '-speed' -> 'high-speed', 'copper' + '-cold' -> 'copper cold')
-    and fix common split compound typos ('over' + 'heats' -> 'overheats').
-    """
-    cleaned: List[Dict[str, Any]] = []
-    for w in raw_words:
-        txt = str(w.get("word", "")).strip()
-        if not txt:
-            continue
-        start = float(w["start"])
-        end = float(w["end"])
-        low = txt.lower()
-
-        if cleaned and txt.startswith("-"):
-            prev_low = cleaned[-1]["word"].lower()
-            if prev_low == "copper" and low == "-cold":
-                cleaned[-1]["word"] = "copper"
-                cleaned.append({"word": "cold", "start": start, "end": end})
-            else:
-                cleaned[-1]["word"] = cleaned[-1]["word"] + txt
-                cleaned[-1]["end"] = max(cleaned[-1]["end"], end)
-            continue
-
-        if cleaned and cleaned[-1]["word"].lower() == "over" and low.startswith("heat"):
-            cleaned[-1]["word"] = "over" + txt
-            cleaned[-1]["end"] = max(cleaned[-1]["end"], end)
-            continue
-
-        cleaned.append({"word": txt, "start": start, "end": end})
-    return cleaned
-
-
-def build_subtitle_chunks(words: List[Dict[str, Any]], total_dur: float) -> List[Dict[str, Any]]:
-    tokens = clean_whisper_tokens(words)
-    chunks: List[Dict[str, Any]] = []
-    if not tokens:
-        return chunks
-
-    buf: List[Dict[str, Any]] = []
-    for idx, tok in enumerate(tokens):
-        buf.append(tok)
-        txt = tok["word"]
-        low = re.sub(r"[^a-z]", "", txt.lower())
-        ends_punct = txt.endswith((".", "!", "?", ","))
-        next_gap = (tokens[idx + 1]["start"] - tok["end"]) if idx + 1 < len(tokens) else 1.0
-        next_is_last = idx + 1 == len(tokens) - 1
-
-        should_split = False
-        if next_is_last and len(buf) >= 3:
-            should_split = False
-        elif ends_punct and len(buf) >= 2:
-            should_split = True
-        elif next_gap > 0.24 and len(buf) >= 2:
-            should_split = True
-        elif len(buf) >= 4 and low not in DANGLING_END_WORDS:
-            should_split = True
-        elif len(buf) >= 6:
-            should_split = True
-
-        if should_split:
-            chunk_words = []
-            for item in buf:
-                clean_tok = re.sub(r"[^a-z0-9$%]", "", item["word"].lower())
-                is_hi = bool(re.search(r"\d", clean_tok)) or clean_tok in HIGHLIGHT_KEYWORDS
-                chunk_words.append({"text": item["word"], "highlight": is_hi})
-            chunks.append(
-                {
-                    "startSec": round(buf[0]["start"], 3),
-                    "endSec": round(min(total_dur, buf[-1]["end"] + 0.08), 3),
-                    "words": chunk_words,
-                }
-            )
-            buf = []
-
-    if buf:
-        chunk_words = []
-        for item in buf:
-            clean_tok = re.sub(r"[^a-z0-9$%]", "", item["word"].lower())
-            is_hi = bool(re.search(r"\d", clean_tok)) or clean_tok in HIGHLIGHT_KEYWORDS
-            chunk_words.append({"text": item["word"], "highlight": is_hi})
-        chunks.append(
-            {
-                "startSec": round(buf[0]["start"], 3),
-                "endSec": round(min(total_dur, buf[-1]["end"] + 0.15), 3),
-                "words": chunk_words,
-            }
-        )
-
-    # Guarantee strictly non-overlapping sequential subtitle chunks!
-    for i in range(len(chunks) - 1):
-        curr = chunks[i]
-        nxt = chunks[i + 1]
-        if curr["endSec"] >= nxt["startSec"] - 0.015:
-            mid = round((curr["endSec"] + nxt["startSec"]) * 0.5, 3)
-            curr["endSec"] = max(round(curr["startSec"] + 0.08, 3), round(nxt["startSec"] - 0.02, 3))
-            if nxt["startSec"] <= curr["endSec"]:
-                nxt["startSec"] = round(curr["endSec"] + 0.02, 3)
-                if nxt["endSec"] <= nxt["startSec"]:
-                    nxt["endSec"] = round(nxt["startSec"] + 0.15, 3)
-        _ = mid if False else None
-
-    return chunks
-
-
-def build_safe_fallback_scene_tsx(scene_num: int, accent_hex: str, title: str) -> str:
-    variant = scene_num % 4
-    safe_comment = re.sub(r"[^A-Za-z0-9 ,.-]", "", title)[:60]
-    if variant == 0:
-        body = f"""
-      <DataHallBuilding pos={{[-0.7, 0, 0]}} size={{[3.0, 1.5, 2.2]}} accentHex={{"{accent_hex}"}} progress={{progress}} frame={{frame}} />
-      <CitySkylineBlock pos={{[2.1, -0.3, 0.2]}} scale={{0.85}} accentHex="#F59E0B" frame={{frame}} />
-      <PipeConduit points={{[[-0.7, -0.8, 0.9], [0.8, -0.8, 0.6], [2.0, -0.8, 0.2]]}} fluidColor={{"{accent_hex}"}} flangeCount={{3}} speed={{0.85}} frame={{frame}} />"""
+    if backdrop == "black_title_card":
+        inner = f"""
+      <TitleCard2D text={{{safe_title}}} progress={{progress}} accentHex={{"{accent}"}} />"""
+    elif variant == 0:
+        inner = f"""
+      <ReactorVessel2D x={{isVertical ? 540 : 620}} y={{isVertical ? 840 : 570}} scale={{1.25}} accentHex={{"{accent}"}} frame={{frame}} progress={{progress}} />
+      <CartoonCharacter2D x={{isVertical ? 280 : 1280}} y={{isVertical ? 1280 : 720}} scale={{1.15}} variant="engineer" mood="worried" hardHat={{true}} sweatDrop={{true}} pose="point_right" flip={{true}} frame={{frame}} />
+      <InkCallout2D x={{isVertical ? 540 : 1240}} y={{isVertical ? 320 : 280}} text="CORE HEAT" color={{"{accent}"}} localTime={{localTime}} delaySec={{0.2}} />"""
     elif variant == 1:
-        body = f"""
-      <MatteBox pos={{[0, -1.1, 0]}} size={{[4.8, 0.2, 3.6]}} color="#2D3E58" />
-      <HardwareRack pos={{[-1.2, 0.0, 0]}} size={{[1.05, 2.0, 1.05]}} bays={{6}} accentHex={{"{accent_hex}"}} frame={{frame}} />
-      <HardwareRack pos={{[1.2, 0.0, 0]}} size={{[1.05, 2.0, 1.05]}} bays={{6}} accentHex={{"{accent_hex}"}} frame={{frame}} />
-      <PipeConduit points={{[[-1.2, 1.15, 0], [0, 1.35, 0], [1.2, 1.15, 0]]}} fluidColor={{"{accent_hex}"}} flangeCount={{3}} speed={{0.9}} frame={{frame}} />"""
+        inner = f"""
+      <LineChart2D x={{isVertical ? 140 : 420}} y={{isVertical ? 420 : 230}} w={{isVertical ? 800 : 1080}} h={{520}} label="POWER LOAD" startVal={{120}} endVal={{1000}} suffix=" MW" color={{"{accent}"}} progress={{progress}} />
+      <CartoonCharacter2D x={{isVertical ? 540 : 240}} y={{isVertical ? 1320 : 730}} scale={{1.05}} variant="ceo" mood="shocked" glasses={{true}} sweatDrop={{true}} pose="hands_head" frame={{frame}} />"""
     elif variant == 2:
-        body = f"""
-      <MatteBox pos={{[0, -1.1, 0]}} size={{[4.6, 0.2, 3.8]}} color="#2B3B52" />
-      <CoolingTower pos={{[-1.15, 0.1, 0]}} radius={{0.95}} height={{2.2}} accentHex={{"{accent_hex}"}} cutaway={{true}} frame={{frame}} />
-      <CoolingTower pos={{[1.25, 0.1, 0.2]}} radius={{0.85}} height={{2.0}} accentHex={{"{accent_hex}"}} cutaway={{false}} frame={{frame}} />
-      <PipeConduit points={{[[-2.3, -0.7, 0.6], [-1.15, -0.7, 0.4], [1.25, -0.7, 0.4]]}} fluidColor="#06B6D4" flangeCount={{3}} speed={{0.8}} frame={{frame}} />"""
+        inner = f"""
+      <ServerRack2D x={{isVertical ? 340 : 540}} y={{isVertical ? 760 : 540}} scale={{1.15}} accentHex={{"{accent}"}} frame={{frame}} />
+      <ServerRack2D x={{isVertical ? 740 : 940}} y={{isVertical ? 760 : 540}} scale={{1.15}} accentHex={{"{accent}"}} frame={{frame}} />
+      <Microchip2D x={{isVertical ? 540 : 1380}} y={{isVertical ? 1260 : 540}} scale={{1.1}} color={{"{accent}"}} overheating={{true}} cracked={{true}} frame={{frame}} progress={{progress}} />
+      <AnimatedPipe2D d={{isVertical ? "M 340 420 L 740 420 L 740 960" : "M 540 240 L 940 240 L 1380 420"}} fluidColor={{"{accent}"}} frame={{frame}} />"""
+    elif variant == 3:
+        inner = f"""
+      <BalanceScale2D x={{isVertical ? 540 : 960}} y={{isVertical ? 900 : 560}} leftLabel="GRID SUPPLY" rightLabel="AI DEMAND" tiltDeg={{18}} leftColor="#10B981" rightColor="#EF4444" progress={{progress}} />
+      <InkCallout2D x={{isVertical ? 540 : 960}} y={{isVertical ? 340 : 190}} text="BOTTLENECK" color="#EF4444" localTime={{localTime}} delaySec={{0.4}} />"""
+    elif variant == 4:
+        inner = f"""
+      <CoolingTower2D x={{isVertical ? 380 : 620}} y={{isVertical ? 780 : 560}} scale={{1.15}} accentHex={{"{accent}"}} frame={{frame}} />
+      <PowerPylon2D x={{isVertical ? 740 : 1140}} y={{isVertical ? 820 : 560}} scale={{1.1}} accentHex="#F59E0B" frame={{frame}} />
+      <BatteryBank2D x={{isVertical ? 540 : 1540}} y={{isVertical ? 1320 : 620}} scale={{1.05}} accentHex="#10B981" frame={{frame}} progress={{progress}} />"""
     else:
-        body = f"""
-      <MatteBox pos={{[0, -1.1, 0]}} size={{[5.2, 0.2, 3.4]}} color="#2D3E58" />
-      <FinnedHousing pos={{[-1.4, -0.05, 0]}} radius={{0.78}} height={{1.8}} finCount={{8}} accentHex="#38BDF8" cutaway={{true}} frame={{frame}} />
-      <PowerPylon pos={{[0.1, -0.05, -0.3]}} height={{2.2}} accentHex="#F59E0B" />
-      <BatteryContainer pos={{[1.65, -0.25, 0.2]}} size={{[1.4, 1.3, 1.1]}} accentHex={{"{accent_hex}"}} frame={{frame}} />
-      <PipeConduit points={{[[-1.4, 0.6, 0], [0.1, 0.75, -0.3], [1.65, 0.2, 0.2]]}} fluidColor={{"{accent_hex}"}} flangeCount={{3}} speed={{0.9}} frame={{frame}} />"""
+        inner = f"""
+      <WorldMapArc2D x={{isVertical ? 90 : 320}} y={{isVertical ? 460 : 200}} w={{isVertical ? 900 : 1280}} h={{640}} accentHex={{"{accent}"}} zoomLabel="SUBSEA LINK" progress={{progress}} frame={{frame}} />
+      <Stopwatch2D x={{isVertical ? 540 : 1620}} y={{isVertical ? 1380 : 340}} radius={{120}} maxSecLabel="24/7" progress={{progress}} />"""
 
     return f"""import React from "react";
 import {{
-  MatteBox, HardwareRack, FinnedHousing, PipeConduit,
-  DataHallBuilding, CitySkylineBlock, PowerPylon, CoolingTower, BatteryContainer
-}} from "../../components/StudioKit";
-import type {{ DynamicSceneProps }} from "../../types";
+  SceneBackdrop2D, Camera2D, CartoonCharacter2D, TitleCard2D,
+  InkCallout2D, LineChart2D, BalanceScale2D, WorldMapArc2D, Stopwatch2D,
+  ReactorVessel2D, CoolingTower2D, ServerRack2D, Microchip2D, PowerPylon2D, BatteryBank2D, AnimatedPipe2D
+}} from "../../components/CartoonKit2D";
+import type {{ Scene2DProps }} from "../../types";
 
-// Fallback: {safe_comment}
-export const Scene_{scene_num:02d}: React.FC<DynamicSceneProps> = ({{ frame, progress }}) => {{
+// Fallback 2D scene: {safe_comment}
+export const Scene_{scene_num:02d}: React.FC<Scene2DProps> = (props) => {{
+  const {{ frame, localTime, progress, peakTimes, accentHex, backdropTheme, cameraMove, isVertical }} = props;
+  const vb = isVertical ? "0 0 1080 1920" : "0 0 1920 1080";
   return (
-    <group>{body}
-    </group>
+    <svg viewBox={{vb}} style={{{{ width: "100%", height: "100%", display: "block" }}}}>
+      <SceneBackdrop2D theme={{backdropTheme}} frame={{frame}} accentHex={{accentHex}} />
+      <Camera2D move={{cameraMove}} progress={{progress}} frame={{frame}} peakTimes={{peakTimes}} localTime={{localTime}}>{inner}
+      </Camera2D>
+    </svg>
   );
 }};
 """
@@ -882,201 +766,98 @@ def sanitize_scene_tsx(code: str, scene_num: int) -> str:
     return txt.strip() + "\n"
 
 
-def normalize_callouts(raw_callouts: Any, is_short: bool) -> List[Dict[str, Any]]:
-    if not isinstance(raw_callouts, list):
-        return []
-    clean: List[Dict[str, Any]] = []
-    for ci, item in enumerate(raw_callouts[:2]):
-        if not isinstance(item, dict):
-            continue
-        label = clean_word_boundary_label(str(item.get("label") or ""), max_chars=34)
-        if not label:
-            continue
-        anc = item.get("anchorPct")
-        box = item.get("boxPct")
-        if not (isinstance(anc, list) and len(anc) == 2):
-            anc = [50, 50] if ci == 0 else [45, 58]
-        if not (isinstance(box, list) and len(box) == 2):
-            box = [72, 22] if not is_short else [62, 24]
-        ax = round(min(76.0, max(24.0, float(anc[0]))), 1)
-        ay = round(min(72.0, max(26.0, float(anc[1]))), 1)
-        bx = round(min(82.0, max(16.0, float(box[0]))), 1)
-        by = round(min(68.0, max(18.0, float(box[1]))), 1)
-        if bx < 38 and by < 32:
-            bx = 70.0
-        clean.append({"label": label, "anchorPct": [ax, ay], "boxPct": [bx, by]})
-    return clean
-
-
-def normalize_stat_counter(raw_stat: Any) -> Any:
-    if not isinstance(raw_stat, dict):
-        return None
-    label = clean_word_boundary_label(str(raw_stat.get("label") or ""), max_chars=28)
-    if not label:
-        return None
-    try:
-        from_val = float(raw_stat.get("fromVal", 0))
-        to_val = float(raw_stat.get("toVal", 100))
-    except Exception:
-        return None
-
-    inferred_dec = max(infer_decimals(from_val), infer_decimals(to_val))
-    raw_dec = raw_stat.get("decimals")
-    if isinstance(raw_dec, (int, float)) and int(raw_dec) >= inferred_dec:
-        decimals = min(3, int(raw_dec))
-    else:
-        decimals = min(3, inferred_dec)
-
-    return {
-        "label": label,
-        "fromVal": from_val,
-        "toVal": to_val,
-        "prefix": str(raw_stat.get("prefix") or "")[:6],
-        "suffix": str(raw_stat.get("suffix") or "")[:10],
-        "decimals": decimals,
-    }
-
-
 def normalize_storyboard(
     raw_board: Dict[str, Any],
     duration_sec: float,
     bpm: float,
     peaks: List[float],
-    words: List[Dict[str, Any]],
+    sentence_ends: List[float],
     fps: int,
     width: int,
     height: int,
-    is_short: bool,
 ) -> Dict[str, Any]:
     raw_scenes = raw_board.get("scenes") or []
     if not raw_scenes:
         raise ValueError("Storyboard returned empty scenes list.")
 
+    snap_points = sorted(set(peaks + sentence_ends))
     count = len(raw_scenes)
     avg_len = duration_sec / count
     cursor = 0.0
     scenes: List[Dict[str, Any]] = []
-    cam_bank = BEAT_CAM_PRESETS_9_16 if is_short else BEAT_CAM_PRESETS_16_9
+    seen_concepts: set[str] = set()
+    prev_backdrop = ""
+    prev_transition = ""
 
     for idx, sc in enumerate(raw_scenes):
         is_last = idx == count - 1
         start_sec = round(cursor, 3)
+
+        backdrop = str(sc.get("backdropTheme") or "").strip()
+        if backdrop not in BACKDROP_THEMES:
+            backdrop = BACKDROP_THEMES[idx % (len(BACKDROP_THEMES) - 1)]
+        # Never repeat same backdrop on consecutive scenes
+        if backdrop == prev_backdrop and backdrop != "black_title_card":
+            b_idx = BACKDROP_THEMES.index(backdrop)
+            backdrop = BACKDROP_THEMES[(b_idx + 1) % (len(BACKDROP_THEMES) - 1)]
+        prev_backdrop = backdrop
+
         if is_last:
             end_sec = round(duration_sec, 3)
         else:
             raw_end = float(sc.get("endSec", (idx + 1) * avg_len))
-            min_gap = 3.5 if is_short else 5.0
-            min_end = start_sec + max(min_gap, avg_len * 0.6)
-            max_end = duration_sec - (count - idx - 1) * min_gap
-            clamped = min(max(raw_end, min_end), max(min_end, max_end))
-            end_sec = snap_to_peak(clamped, peaks, start_sec + min_gap - 0.5, duration_sec - min_gap)
-        cursor = end_sec
-        sc_dur = max(3.0, end_sec - start_sec)
-
-        pal = PALETTES[idx % len(PALETTES)]
-        bg_hex = sanitize_hex(sc.get("bgHex"), pal["bgHex"])
-        accent_hex = sanitize_hex(sc.get("accentHex"), pal["accentHex"])
-
-        raw_beats = sc.get("beats") if isinstance(sc.get("beats"), list) else []
-        target_beats = max(2, min(4, int(round(sc_dur / 3.4))))
-        if sc_dur < 5.5:
-            target_beats = 2
-
-        default_cams = cam_bank[idx % len(cam_bank)]
-        clean_beats: List[Dict[str, Any]] = []
-        b_cursor = start_sec
-        b_step = sc_dur / target_beats
-
-        for bi in range(target_beats):
-            b_is_last = bi == target_beats - 1
-            b_start = round(b_cursor, 3)
-            if b_is_last:
-                b_end = end_sec
+            if backdrop == "black_title_card":
+                target_dur = min(2.6, max(1.4, raw_end - start_sec))
+                end_sec = round(min(duration_sec - 2.0, start_sec + target_dur), 3)
             else:
-                b_raw_end = start_sec + (bi + 1) * b_step
-                b_end = snap_to_peak(b_raw_end, peaks, b_start + 2.4, end_sec - 2.3)
-                if b_end <= b_start + 2.2:
-                    b_end = round(min(end_sec - 2.0, b_start + b_step), 3)
-            b_cursor = b_end
+                min_gap = 2.8 if duration_sec <= 45 else 3.4
+                max_gap = 8.2
+                clamped = min(max(raw_end, start_sec + min_gap), min(start_sec + max_gap, duration_sec - (count - idx - 1) * 2.2))
+                end_sec = snap_to_boundary(clamped, snap_points, start_sec + min_gap - 0.3, duration_sec - 1.8)
+        cursor = end_sec
 
-            rb = raw_beats[bi] if bi < len(raw_beats) and isinstance(raw_beats[bi], dict) else {}
-            def_cam = default_cams[bi % len(default_cams)]
-            off = rb.get("cameraOffset")
-            look = rb.get("lookOffset")
-            if not (isinstance(off, list) and len(off) == 3):
-                off = def_cam["offset"]
-            if not (isinstance(look, list) and len(look) == 3):
-                look = def_cam["lookOffset"]
+        concept = str(sc.get("visualConcept") or f"Scene Concept {idx + 1}").strip()[:110]
+        if concept.lower() in seen_concepts:
+            concept = f"{concept} ({idx + 1})"
+        seen_concepts.add(concept.lower())
 
-            # Keep cameras close & well-centered so 3D hardware fills ~65% of screen
-            cam_x = round(min(6.2, max(-6.2, float(off[0]))), 3)
-            cam_y = round(min(3.5, max(0.7, float(off[1]))), 3)
-            cam_z = round(min(6.5, max(-6.5, float(off[2]))), 3)
-            if abs(cam_x) + abs(cam_z) > 9.5:
-                cam_x = round(cam_x * 0.78, 3)
-                cam_z = round(cam_z * 0.78, 3)
+        cam = str(sc.get("cameraMove") or "").strip()
+        if cam not in CAMERA_MOVES:
+            cam = CAMERA_MOVES[idx % len(CAMERA_MOVES)]
 
-            callouts = normalize_callouts(rb.get("callouts"), is_short=is_short)
-            if not callouts:
-                concept_short = clean_word_boundary_label(str(sc.get("visualConcept") or "CORE HARDWARE"), 24)
-                callouts = [{"label": concept_short, "anchorPct": [50, 52], "boxPct": [72, 24]}]
+        trans = str(sc.get("transition") or "").strip()
+        if trans not in TRANSITIONS or trans == prev_transition:
+            trans = TRANSITIONS[(idx + 1) % len(TRANSITIONS)]
+        prev_transition = trans
 
-            stat_counter = normalize_stat_counter(rb.get("statCounter"))
-            if idx == 0 and bi == 0 and not stat_counter:
-                stat_counter = {
-                    "label": "TOTAL CAMPUS CAPEX",
-                    "fromVal": 0.0,
-                    "toVal": 100.0,
-                    "prefix": "$",
-                    "suffix": "B",
-                    "decimals": 0,
-                }
+        sfx = str(sc.get("sfx") or "").strip()
+        if sfx not in SFX_CUES:
+            sfx = "marker_swipe" if backdrop == "black_title_card" else SFX_CUES[idx % len(SFX_CUES)]
 
-            beat_peaks = [p for p in peaks if b_start <= p <= b_end]
-            trigger_sec = 0.0 if (idx == 0 and bi == 0) else (beat_peaks[0] if beat_peaks else round(b_start + 0.15, 3))
+        accent_hex = sanitize_hex(sc.get("accentHex"), ["#22C55E", "#38BDF8", "#F97316", "#F59E0B", "#22D3EE"][idx % 5])
 
-            clean_beats.append(
-                {
-                    "id": f"b_{idx + 1:02d}_{bi + 1:02d}",
-                    "startSec": b_start,
-                    "endSec": round(b_end, 3),
-                    "triggerSec": trigger_sec,
-                    "cameraOffset": [cam_x, cam_y, cam_z],
-                    "lookOffset": [
-                        round(min(0.8, max(-0.8, float(look[0]))), 3),
-                        round(min(0.6, max(0.0, float(look[1]))), 3),
-                        round(min(0.8, max(-0.8, float(look[2]))), 3),
-                    ],
-                    "callouts": callouts,
-                    "statCounter": stat_counter,
-                }
-            )
-
-        world_pos = [
-            round(idx * 28.0, 2),
-            round(2.4 if idx % 2 == 1 else 0.0, 2),
-            round(-idx * 20.0 + (3.0 if idx % 3 == 1 else 0.0), 2),
-        ]
+        local_peaks = [round(p - start_sec, 3) for p in peaks if start_sec + 0.25 <= p <= end_sec - 0.25]
 
         scenes.append(
             {
                 "id": f"scene_{idx + 1:02d}",
                 "componentName": f"Scene_{idx + 1:02d}",
-                "visualConcept": str(sc.get("visualConcept") or f"Hardware Assembly {idx + 1}")[:120],
-                "visualSpec": str(sc.get("visualSpec") or "Multi-part CAD-edged cutaway hardware assembly.")[:500],
+                "visualConcept": concept,
+                "visualSpec": str(sc.get("visualSpec") or concept)[:500],
+                "titleText": str(sc.get("titleText") or "")[:45],
+                "backdropTheme": backdrop,
+                "cameraMove": cam,
+                "transition": trans,
+                "sfx": sfx,
+                "accentHex": accent_hex,
                 "startSec": start_sec,
                 "endSec": end_sec,
-                "worldPos": world_pos,
-                "bgHex": bg_hex,
-                "accentHex": accent_hex,
-                "beats": clean_beats,
+                "localPeakTimes": local_peaks,
             }
         )
 
-    subtitle_chunks = build_subtitle_chunks(words, duration_sec)
-
     return {
-        "channel": "InfraVerse",
+        "channel": "InfraVerse2D",
         "fps": fps,
         "width": width,
         "height": height,
@@ -1084,7 +865,6 @@ def normalize_storyboard(
         "hasAudio": True,
         "bpm": bpm,
         "emphasisPeaksSec": peaks,
-        "subtitleChunks": subtitle_chunks,
         "scenes": scenes,
     }
 
@@ -1103,24 +883,23 @@ def write_registry_and_timeline(plan: Dict[str, Any]) -> None:
 
     registry_ts = (
         'import type React from "react";\n'
-        'import type { DynamicSceneProps } from "../types";\n'
+        'import type { Scene2DProps } from "../types";\n'
         + "\n".join(imports)
-        + "\n\nexport const SCENE_REGISTRY: Record<string, React.FC<DynamicSceneProps>> = {\n"
+        + "\n\nexport const SCENE_REGISTRY: Record<string, React.FC<Scene2DProps>> = {\n"
         + "\n".join(entries)
         + "\n};\n"
     )
     (GENERATED_DIR / "SceneRegistry.ts").write_text(registry_ts, encoding="utf-8")
 
     scenes_data_ts = (
-        'import type { DocumentaryPlan } from "../types";\n\n'
-        f"export const SCENE_PLAN: DocumentaryPlan = {json.dumps(plan, indent=2, ensure_ascii=False)};\n"
+        'import type { CartoonPlan } from "../types";\n\n'
+        f"export const SCENE_PLAN: CartoonPlan = {json.dumps(plan, indent=2, ensure_ascii=False)};\n"
     )
     (GENERATED_DIR / "ScenesData.ts").write_text(scenes_data_ts, encoding="utf-8")
 
     timeline_tsx = f"""import React from "react";
 import {{ AbsoluteFill }} from "remotion";
-import {{ Continuous3DWorld }} from "../components/Continuous3DWorld";
-import {{ HudOverlay }} from "../components/HudOverlay";
+import {{ CartoonStage2D }} from "../components/CartoonStage2D";
 import {{ SCENE_PLAN }} from "./ScenesData";
 
 export const GENERATED_TOTAL_FRAMES = {total_frames};
@@ -1128,8 +907,7 @@ export const GENERATED_TOTAL_FRAMES = {total_frames};
 export const GeneratedTimeline: React.FC = () => {{
   return (
     <AbsoluteFill>
-      <Continuous3DWorld plan={{SCENE_PLAN}} />
-      <HudOverlay plan={{SCENE_PLAN}} />
+      <CartoonStage2D plan={{SCENE_PLAN}} />
     </AbsoluteFill>
   );
 }};
@@ -1170,7 +948,7 @@ def self_heal_scenes(client: Any, plan: Dict[str, Any]) -> None:
             fix_prompt = f"""
 Fix the TypeScript errors in `{cname}.tsx`.
 
-{STUDIO_KIT_API_DOC}
+{CARTOON_KIT_DOC}
 
 ERRORS:
 {chr(10).join(err_lines)}
@@ -1195,9 +973,15 @@ Return ONLY the fixed complete TSX file.
         for cname in still_broken:
             num = int(cname.split("_")[1])
             sc_meta = scene_map.get(cname, {})
-            print(f"[self_heal] Swapping stubborn {cname} to multi-part fallback.")
+            print(f"[self_heal] Swapping stubborn {cname} to unique 2D cartoon fallback.")
             (SCENES_DIR / f"{cname}.tsx").write_text(
-                build_safe_fallback_scene_tsx(num, sc_meta.get("accentHex", "#22D3EE"), sc_meta.get("visualConcept", cname)),
+                build_safe_fallback_scene_tsx(
+                    num,
+                    sc_meta.get("backdropTheme", "night_mountains"),
+                    sc_meta.get("accentHex", "#22C55E"),
+                    sc_meta.get("visualConcept", cname),
+                    sc_meta.get("titleText", ""),
+                ),
                 encoding="utf-8",
             )
         verify = run_tsc_check()
@@ -1211,7 +995,7 @@ def main() -> None:
     duration_sec = float(beats["duration_sec"])
     bpm = float(beats["bpm"])
     peaks = list(beats["emphasis_peaks"])
-    words = list(transcript.get("words") or [])
+    sentence_ends = [float(s["end"]) for s in transcript.get("segments", [])]
 
     video_format = os.environ.get("VIDEO_FORMAT", "long_16_9").strip()
     quality = os.environ.get("QUALITY_PRESET", "1080p_30fps").strip()
@@ -1226,26 +1010,22 @@ def main() -> None:
 
     input_dir = get_input_dir()
     visuals_prompt = load_visuals_prompt(input_dir)
-    custom_models = discover_custom_models()
     min_sc, max_sc = compute_scene_range(duration_sec, is_short=is_short)
 
-    framing_note = (
-        "VERTICAL 9:16 SHORT (1080x1920): Keep X tight [-2.0 .. +2.0], build TALL vertical stacked hardware [-1.2 .. +2.4 Y]."
+    aspect_note = (
+        "VERTICAL 9:16 SHORT (viewBox 0..1080 wide x 0..1920 tall): Stack foreground characters & machinery cleanly vertically (x around 200..880, y around 320..1550)."
         if is_short
-        else "WIDESCREEN 16:9 (1920x1080): Keep hero centered around [0, 0, 0] within [-3.2 .. +3.2] X/Z and base resting at Y = -1.1."
+        else "WIDESCREEN 16:9 (viewBox 0..1920 wide x 0..1080 tall): Compose foreground characters, cutaways, charts & callouts cleanly across the full frame (x 160..1760, y 140..960)."
     )
 
     storyboard_prompt = f"""
-You are the Lead 3D Motion Director & Technical Illustrator (Branch Education / Real Engineering style with crisp HUD callouts).
+You are the Lead 2D Animated Explainer Director (exact Video-1 hand-inked 2D cartoon documentary style: expressive pill-characters, bold ink outlines, rich varied environments, visual metaphors, highlighter quotes, charts, and dramatic black handwritten title cards).
 
-ASPECT & CLOSE CAMERA FRAMING:
-{framing_note}
-CRITICAL FRAMING RULE: Keep `cameraOffset` CLOSE so the 3D subject fills 60-70% of the screen (`X/Z` within 2.5..4.6, `Y` within 1.1..2.6, `lookOffset` Y around `0.25`). NEVER place the camera far away!
+ASPECT:
+{aspect_note}
 
-USER VISUAL DESCRIPTION:
-{visuals_prompt if visuals_prompt else "(No visuals.txt uploaded — invent vivid multi-part engineering & infrastructure 3D scenes matching the voiceover!)"}
-
-CUSTOM .GLB MODELS: {json.dumps(custom_models)}
+USER VISUAL & STYLE DIRECTION (Follow EVERY environment style, mood, and element requested here!):
+{visuals_prompt if visuals_prompt else "(No visuals.txt uploaded — design a richly varied Video-1-style cartoon visual journey matching every sentence of the narration!)"}
 
 VOICEOVER SEGMENTS ({duration_sec:.2f}s):
 {json.dumps([{"start": s["start"], "end": s["end"], "text": s["text"]} for s in transcript.get("segments", [])], ensure_ascii=False)}
@@ -1253,54 +1033,50 @@ VOICEOVER SEGMENTS ({duration_sec:.2f}s):
 VOCAL EMPHASIS PEAKS (seconds):
 {json.dumps(peaks[:120])}
 
-HARD RULES:
-1. Divide the {duration_sec:.2f}s narration into {min_sc} to {max_sc} unique 3D chapters (`scenes`), roughly 6-10s each!
-2. LITERAL NOUN MATCHING: Whenever narration mentions concrete walls, warehouses, cities, power pylons, cooling towers, server racks, or batteries, specify those EXACT literal structures in `visualSpec` (DataHallBuilding, CitySkylineBlock, PowerPylon, CoolingTower, HardwareRack, BatteryContainer)!
-3. FORCED 3-4 SECOND BEATS: Inside EVERY chapter, define 2 or 3 `beats` (~3-4s each) with noticeably different `cameraOffset` angles plus:
-   - `callouts`: 1-2 short labels (MAX 3-4 words / <= 26 chars so nothing wraps awkwardly, e.g. `"4NM SILICON DIE"`, `"345 KV SUBSTATION"`, `"600 kW / RACK"`) with `anchorPct` [30..70, 32..66] and `boxPct` [18..78, 20..64].
-   - `statCounter`: animated stat card (`label`, `fromVal`, `toVal`, `prefix`, `suffix`, `decimals`) whenever specs/numbers are mentioned. Set `decimals` properly (`1` for 3.2/4.5, `2` for 1.12, `3` for 99.999, `0` for whole numbers).
-4. STUDIO COLORS: Rich readable slate/blueprint `bgHex` (#101B2E, #13223A, #20161F, #102430, #102822) + bright `accentHex`.
+AVAILABLE BACKDROP THEMES:
+{json.dumps(BACKDROP_THEMES)}
+
+AVAILABLE CAMERA MOVES: {json.dumps(CAMERA_MOVES)}
+AVAILABLE TRANSITIONS: {json.dumps(TRANSITIONS)}
+AVAILABLE SFX CUES: {json.dumps(SFX_CUES)}
+
+HARD STORYBOARD RULES:
+1. Break the {duration_sec:.2f}s voiceover into {min_sc} to {max_sc} snappy scenes synced to exact sentence boundaries!
+   - Normal cartoon scenes MUST stay 3.5 to 8.0 seconds (never dull long holds).
+   - Drop 2–4 short `black_title_card` scenes (1.5–2.3s long, with a punchy 2–4 word `titleText` like `"Nobody noticed."`, `"The Cooling Trap"`, `"Zero Margin."`) right at major story turns!
+2. ZERO VISUAL REPETITION: Every scene MUST have a unique `visualConcept` AND vary `backdropTheme` and `transition` across consecutive scenes so it feels genuinely human-edited!
+3. MATCH SPOKEN NOUNS & METAPHORS LITERALLY: Use `SplitScreen3Panel` when listing 3 things (`bank / substation / city`), `LineChart2D` or `BarChart2D` for surging power/costs, `BalanceScale2D` for comparisons, `ConveyorBelt2D` for chip generations, `WorldMapArc2D` for subsea cables/global routes, `QuoteHighlight2D` for reports/quotes, `CartoonCharacter2D` reacting emotionally, and `ReactorVessel2D` / `CoolingTower2D` / `ServerRack2D` / `Microchip2D` / `PowerPylon2D` / `BatteryBank2D` + custom SVG art!
 
 Return ONLY valid JSON:
 {{
   "scenes": [
     {{
-      "visualConcept": "Data Hall Campus & City Grid",
-      "visualSpec": "DataHallBuilding concrete walls connected via PowerPylon and PipeConduit to CitySkylineBlock",
-      "endSec": 8.0,
-      "bgHex": "#101B2E",
-      "accentHex": "#22D3EE",
-      "beats": [
-        {{
-          "cameraOffset": [3.8, 2.0, 4.3],
-          "lookOffset": [0.0, 0.35, 0.0],
-          "callouts": [{{"label": "1,000 MW DATA HALL", "anchorPct": [46, 52], "boxPct": [74, 24]}}],
-          "statCounter": {{"label": "TOTAL CAPEX", "fromVal": 0, "toVal": 100, "prefix": "$", "suffix": "B", "decimals": 0}}
-        }},
-        {{
-          "cameraOffset": [1.5, 1.3, 3.0],
-          "lookOffset": [0.15, 0.25, 0.0],
-          "callouts": [{{"label": "CITY POWER DRAW", "anchorPct": [60, 56], "boxPct": [22, 34]}}]
-        }}
-      ]
+      "visualConcept": "Short unique concept summary",
+      "visualSpec": "Specific 2D layout, characters, moods, props, callout text, chart/scale numbers & animations synced to spoken words",
+      "titleText": "Optional short text if backdropTheme is black_title_card",
+      "backdropTheme": "night_mountains",
+      "cameraMove": "push_in",
+      "transition": "slide_left",
+      "sfx": "sub_impact",
+      "accentHex": "#22C55E",
+      "endSec": 6.7
     }}
   ]
 }}
 """
 
     client = get_client()
-    print(f"[generate_scenes] Planning storyboard from {input_dir.name}/ ({width}x{height} @ {fps}fps)...")
+    print(f"[generate_scenes] Planning Video-1 2D storyboard from {input_dir.name}/ ({width}x{height} @ {fps}fps)...")
     raw_board = generate_with_fallback(client, storyboard_prompt, role="pro", json_mode=True)
     plan = normalize_storyboard(
         parse_json_strict(raw_board),
         duration_sec=duration_sec,
         bpm=bpm,
         peaks=peaks,
-        words=words,
+        sentence_ends=sentence_ends,
         fps=fps,
         width=width,
         height=height,
-        is_short=is_short,
     )
     (WORK_DIR / "scene_plan.json").write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -1310,7 +1086,7 @@ Return ONLY valid JSON:
 
     scenes = plan["scenes"]
     batch_size = 4
-    print(f"[generate_scenes] Coding {len(scenes)} literal multi-part 3D scenes in batches of {batch_size}...")
+    print(f"[generate_scenes] Drawing {len(scenes)} unique 2D cartoon scenes in batches of {batch_size}...")
 
     for b_start in range(0, len(scenes), batch_size):
         batch = scenes[b_start : b_start + batch_size]
@@ -1319,20 +1095,23 @@ Return ONLY valid JSON:
                 "componentName": sc["componentName"],
                 "visualConcept": sc["visualConcept"],
                 "visualSpec": sc["visualSpec"],
+                "titleText": sc["titleText"],
+                "backdropTheme": sc["backdropTheme"],
                 "accentHex": sc["accentHex"],
-                "customModelsAvailable": custom_models,
+                "durationSec": round(sc["endSec"] - sc["startSec"], 2),
+                "localPeakTimes": sc["localPeakTimes"],
             }
             for sc in batch
         ]
         code_prompt = f"""
-You are an Expert Three.js / React Three Fiber CAD & Infrastructure 3D Animator.
-{framing_note}
-{STUDIO_KIT_API_DOC}
+You are an Expert 2D Cartoon Vector Animator coding SVG + CartoonKit2D scenes in Remotion.
+{aspect_note}
+{CARTOON_KIT_DOC}
 
-BATCH TO CODE (Use literal architectural components like DataHallBuilding, CitySkylineBlock, PowerPylon, CoolingTower, BatteryContainer, HardwareRack, FinnedHousing, PipeConduit, HeatSinkArray, GlassShell! Keep models grounded around Y = -1.1 and X/Z within [-3.2..+3.2]):
+BATCH TO ILLUSTRATE (Make EVERY scene visually rich, lively, full of motion, with bold #111827 ink outlines, expressive CartoonCharacter2D reactions, animated charts/scales/cutaways/pipes, and clean InkCallout2D stats synced to localPeakTimes):
 {json.dumps(batch_specs, indent=2)}
 
-Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_01") and each value is the complete valid TSX file string starting with `import React from "react";`.
+Return ONLY valid JSON mapping each exact `componentName` (e.g. "Scene_01") to its complete valid TSX file string starting with `import React from "react";`.
 """
         try:
             raw_code_json = generate_with_fallback(
@@ -1344,7 +1123,7 @@ Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_
             )
             generated_map = extract_scenes_dict(raw_code_json)
         except Exception as exc:
-            print(f"[generate_scenes] Batch {b_start+1} API failed ({exc}); using multi-part fallbacks.")
+            print(f"[generate_scenes] Batch {b_start+1} API failed ({exc}); using 2D fallbacks.")
             generated_map = {}
 
         for sc in batch:
@@ -1356,11 +1135,17 @@ Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_
                 if not raw_tsx.strip():
                     raise ValueError(f"Empty code returned for {cname}")
                 out_path.write_text(sanitize_scene_tsx(raw_tsx, num), encoding="utf-8")
-                print(f"  + Generated custom {cname}.tsx ({sc['visualConcept'][:48]})")
+                print(f"  + Illustrated {cname}.tsx [{sc['backdropTheme']}] ({sc['visualConcept'][:44]})")
             except Exception as exc:
-                print(f"  ! {cname} sanitize issue ({exc}); writing multi-part fallback.")
+                print(f"  ! {cname} sanitize issue ({exc}); writing unique 2D fallback.")
                 out_path.write_text(
-                    build_safe_fallback_scene_tsx(num, sc["accentHex"], sc["visualConcept"]),
+                    build_safe_fallback_scene_tsx(
+                        num,
+                        sc["backdropTheme"],
+                        sc["accentHex"],
+                        sc["visualConcept"],
+                        sc["titleText"],
+                    ),
                     encoding="utf-8",
                 )
 
@@ -1369,7 +1154,7 @@ Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_
 
     write_registry_and_timeline(plan)
     self_heal_scenes(client, plan)
-    print(f"[generate_scenes] Complete: {len(scenes)} literal multi-part scenes + HUD verified!")
+    print(f"[generate_scenes] Complete: {len(scenes)} unique 2D cartoon scenes verified!")
 
 
 if __name__ == "__main__":
@@ -1386,7 +1171,7 @@ PLAN_PATH = ROOT / "work" / "scene_plan.json"
 SCENES_DIR = ROOT / "src" / "generated" / "scenes"
 TIMELINE_PATH = ROOT / "src" / "generated" / "GeneratedTimeline.tsx"
 
-FORBIDDEN_3D_TOKENS = ("<Text", "<Html", "<Sequence")
+FORBIDDEN_TOKENS = ("<div", "<span", "useFrame", "useEffect", "useState", "from 'three'", 'from "three"')
 
 
 def audit_plan(plan: Dict[str, Any]) -> List[str]:
@@ -1402,40 +1187,31 @@ def audit_plan(plan: Dict[str, Any]) -> List[str]:
             errors.append(f"Duplicate visualConcept detected: {concept}")
         seen_concepts.add(concept)
 
-        if idx > 0 and abs(float(sc["startSec"]) - float(scenes[idx - 1]["endSec"])) > 0.01:
-            errors.append(f"Timeline discontinuity between {scenes[idx-1]['id']} and {sc['id']}.")
+        if idx > 0:
+            prev = scenes[idx - 1]
+            if abs(float(sc["startSec"]) - float(prev["endSec"])) > 0.01:
+                errors.append(f"Timeline gap between {prev['id']} and {sc['id']}.")
+            if sc["backdropTheme"] == prev["backdropTheme"] and sc["backdropTheme"] != "black_title_card":
+                errors.append(f"Consecutive identical backdropTheme '{sc['backdropTheme']}' at {sc['id']}.")
 
-        beats = sc.get("beats") or []
-        if len(beats) < 2:
-            errors.append(f"{sc['id']} has fewer than 2 micro-beats (visual hold too static).")
-
-        for b in beats:
-            b_dur = float(b["endSec"]) - float(b["startSec"])
-            if b_dur > 5.5:
-                errors.append(f"{b['id']} hold duration {b_dur:.2f}s exceeds 5.5s max beat pace.")
+        dur = float(sc["endSec"]) - float(sc["startSec"])
+        if dur > 9.5:
+            errors.append(f"{sc['id']} duration {dur:.2f}s exceeds 9.5s max hold.")
 
         cname = sc.get("componentName")
         if not (SCENES_DIR / f"{cname}.tsx").exists():
             errors.append(f"Missing generated scene component: {cname}.tsx")
 
-    subtitles = plan.get("subtitleChunks") or []
-    for i in range(len(subtitles) - 1):
-        if float(subtitles[i]["endSec"]) > float(subtitles[i + 1]["startSec"]):
-            errors.append(f"Overlapping subtitleChunks at index {i} ({subtitles[i]['endSec']} > {subtitles[i+1]['startSec']}).")
-
     return errors
 
 
-def audit_3d_files() -> List[str]:
+def audit_source_files() -> List[str]:
     errors: List[str] = []
-    files = list(SCENES_DIR.glob("Scene_*.tsx")) + [TIMELINE_PATH]
-    for f in files:
-        if not f.exists():
-            continue
+    for f in list(SCENES_DIR.glob("Scene_*.tsx")):
         txt = f.read_text(encoding="utf-8")
-        for m in FORBIDDEN_3D_TOKENS:
-            if m in txt:
-                errors.append(f"Forbidden token '{m}' found inside {f.name}")
+        for tok in FORBIDDEN_TOKENS:
+            if tok in txt:
+                errors.append(f"Forbidden token '{tok}' inside {f.name}")
     return errors
 
 
@@ -1443,11 +1219,10 @@ def main() -> None:
     if not PLAN_PATH.exists():
         raise SystemExit("Missing work/scene_plan.json")
     plan = json.loads(PLAN_PATH.read_text(encoding="utf-8"))
-    errs = audit_plan(plan) + audit_3d_files()
+    errs = audit_plan(plan) + audit_source_files()
     if errs:
         raise SystemExit("[validate_scenes] FAILED:\n - " + "\n - ".join(errs))
-    total_beats = sum(len(s.get("beats", [])) for s in plan["scenes"])
-    print(f"[validate_scenes] PASSED: {len(plan['scenes'])} scenes, {total_beats} visual beats, zero overlaps.")
+    print(f"[validate_scenes] PASSED: {len(plan['scenes'])} unique continuous 2D cartoon scenes.")
 
 
 if __name__ == "__main__":
@@ -1456,6 +1231,7 @@ if __name__ == "__main__":
 
 FILES["scripts/mix_audio.py"] = r'''
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -1478,18 +1254,18 @@ def bandpass(signal: np.ndarray, low_hz: float, high_hz: float, order: int = 3) 
     return sosfilt(sos, signal)
 
 
-def synthesize_documentary_bgm(n_samples: int, bpm: float) -> np.ndarray:
+def synthesize_underscore_bgm(n_samples: int, bpm: float) -> np.ndarray:
     t = np.arange(n_samples, dtype=np.float64) / SAMPLE_RATE
     bar_sec = (60.0 / max(75.0, min(125.0, bpm))) * 4.0
     chords = [
-        [130.81, 196.00, 233.08, 293.66],
-        [103.83, 155.56, 196.00, 261.63],
-        [87.31, 174.61, 207.65, 261.63],
-        [98.00, 146.83, 196.00, 233.08],
+        [146.83, 220.00, 261.63, 329.63],
+        [116.54, 174.61, 220.00, 293.66],
+        [130.81, 196.00, 246.94, 293.66],
+        [110.00, 164.81, 220.00, 261.63],
     ]
     bar_idx = (t / bar_sec).astype(int) % len(chords)
     bar_phase = (t % bar_sec) / bar_sec
-    env = np.sin(np.pi * np.clip(bar_phase, 0.0, 1.0)) ** 0.4
+    env = np.sin(np.pi * np.clip(bar_phase, 0.0, 1.0)) ** 0.45
 
     left = np.zeros(n_samples, dtype=np.float64)
     right = np.zeros(n_samples, dtype=np.float64)
@@ -1498,19 +1274,16 @@ def synthesize_documentary_bgm(n_samples: int, bpm: float) -> np.ndarray:
         sig_l = np.zeros(n_samples, dtype=np.float64)
         sig_r = np.zeros(n_samples, dtype=np.float64)
         for v_i, freq in enumerate(freqs):
-            detune = 1.0025 if v_i % 2 == 0 else 0.9975
+            detune = 1.002 if v_i % 2 == 0 else 0.998
             sig_l += 0.22 * np.sin(2.0 * np.pi * freq * t)
-            sig_r += 0.22 * np.sin(2.0 * np.pi * freq * detune * t + 0.5)
-        sub = 0.28 * np.sin(2.0 * np.pi * (freqs[0] * 0.5) * t)
-        left += mask * env * (sig_l + sub)
-        right += mask * env * (sig_r + sub)
+            sig_r += 0.22 * np.sin(2.0 * np.pi * freq * detune * t + 0.4)
+        left += mask * env * sig_l
+        right += mask * env * sig_r
 
-    pulse_period = 60.0 / bpm
-    pulse_env = np.exp(-((t % pulse_period) / pulse_period) * 6.5)
-    pulse = np.sin(2.0 * np.pi * 65.0 * t) * pulse_env * 0.16
-
-    left = lowpass(left + pulse, 920.0)
-    right = lowpass(right + pulse, 920.0)
+    beat_period = 60.0 / bpm
+    pulse = np.sin(2.0 * np.pi * 196.0 * t) * np.exp(-((t % beat_period) / beat_period) * 12.0) * 0.14
+    left = lowpass(left + pulse, 1050.0)
+    right = lowpass(right + pulse, 1050.0)
     stereo = np.column_stack([left, right])
     stereo = stereo / (float(np.max(np.abs(stereo))) + 1e-9)
 
@@ -1523,24 +1296,48 @@ def synthesize_documentary_bgm(n_samples: int, bpm: float) -> np.ndarray:
     return stereo
 
 
-def synthesize_glide_swell() -> np.ndarray:
-    rng = np.random.default_rng(11)
-    n = int(1.05 * SAMPLE_RATE)
-    t = np.arange(n) / SAMPLE_RATE
-    env = np.sin(np.pi * t / 1.05) ** 1.8
-    air = bandpass(rng.normal(0.0, 1.0, n), 160.0, 950.0) * env
-    sub = np.sin(2.0 * np.pi * (54.0 - 16.0 * (t / 1.05)) * t) * env * 0.35
-    sig = air * 0.65 + sub
-    stereo = np.column_stack([sig, sig * 0.96])
-    return stereo / (float(np.max(np.abs(stereo))) + 1e-9)
+def make_sfx_bank() -> dict[str, np.ndarray]:
+    rng = np.random.default_rng(17)
 
+    # 1. Smooth slide whoosh
+    nw = int(0.32 * SAMPLE_RATE)
+    tw = np.arange(nw) / SAMPLE_RATE
+    w = bandpass(rng.normal(0.0, 1.0, nw), 320.0, 2400.0) * (np.sin(np.pi * tw / 0.32) ** 1.5)
+    whoosh = np.column_stack([w, w * 0.94]) / (float(np.max(np.abs(w))) + 1e-9)
 
-def synthesize_hud_tick() -> np.ndarray:
-    n = int(0.08 * SAMPLE_RATE)
-    t = np.arange(n) / SAMPLE_RATE
-    sig = np.sin(2.0 * np.pi * 1480.0 * t) * np.exp(-t * 60.0) * 0.6
-    stereo = np.column_stack([sig, sig])
-    return stereo / (float(np.max(np.abs(stereo))) + 1e-9)
+    # 2. Cartoon pop snap
+    npop = int(0.11 * SAMPLE_RATE)
+    tp = np.arange(npop) / SAMPLE_RATE
+    fp = 360.0 + 480.0 * (1.0 - np.exp(-tp * 38.0))
+    p = np.sin(2.0 * np.pi * np.cumsum(fp) / SAMPLE_RATE) * np.exp(-tp * 32.0)
+    pop_snap = np.column_stack([p, p]) / (float(np.max(np.abs(p))) + 1e-9)
+
+    # 3. Marker / highlighter swipe
+    nm = int(0.28 * SAMPLE_RATE)
+    tm = np.arange(nm) / SAMPLE_RATE
+    m = bandpass(rng.normal(0.0, 1.0, nm), 1200.0, 4200.0) * (np.sin(np.pi * tm / 0.28) ** 1.2)
+    marker_swipe = np.column_stack([m, m]) / (float(np.max(np.abs(m))) + 1e-9)
+
+    # 4. Dramatic sub impact
+    ns = int(0.45 * SAMPLE_RATE)
+    ts = np.arange(ns) / SAMPLE_RATE
+    fs = 105.0 * np.exp(-ts * 4.5) + 40.0
+    s = np.sin(2.0 * np.pi * np.cumsum(fs) / SAMPLE_RATE) * np.exp(-ts * 5.5) * np.minimum(1.0, ts / 0.012)
+    sub_impact = np.column_stack([s, s]) / (float(np.max(np.abs(s))) + 1e-9)
+
+    # 5. Crisp tick
+    nt = int(0.07 * SAMPLE_RATE)
+    tt = np.arange(nt) / SAMPLE_RATE
+    tk = np.sin(2.0 * np.pi * 1600.0 * tt) * np.exp(-tt * 70.0)
+    tick = np.column_stack([tk, tk]) / (float(np.max(np.abs(tk))) + 1e-9)
+
+    return {
+        "whoosh": whoosh * 0.14,
+        "pop_snap": pop_snap * 0.16,
+        "marker_swipe": marker_swipe * 0.12,
+        "sub_impact": sub_impact * 0.20,
+        "tick": tick * 0.11,
+    }
 
 
 def main() -> None:
@@ -1553,29 +1350,25 @@ def main() -> None:
     n_samples = len(vo_mono)
     vo_stereo = np.column_stack([vo_mono, vo_mono])
 
-    abs_vo = np.abs(vo_mono)
-    smooth_env = lowpass(abs_vo, 3.0)
-    speech_active = np.clip(smooth_env / (np.percentile(smooth_env, 90) + 1e-6), 0.0, 1.0)
-    duck_gain = 0.09 - 0.045 * speech_active
+    include_bgm = os.environ.get("INCLUDE_BGM", "true").lower() == "true"
+    if include_bgm:
+        abs_vo = np.abs(vo_mono)
+        smooth_env = lowpass(abs_vo, 3.0)
+        speech_active = np.clip(smooth_env / (np.percentile(smooth_env, 90) + 1e-6), 0.0, 1.0)
+        duck_gain = 0.085 - 0.042 * speech_active
+        bgm_stereo = synthesize_underscore_bgm(n_samples, float(plan.get("bpm", 104.0)))
+        mix = vo_stereo * 0.92 + bgm_stereo * duck_gain[:, None]
+    else:
+        mix = vo_stereo * 0.94
 
-    bgm_stereo = synthesize_documentary_bgm(n_samples, float(plan.get("bpm", 102.0)))
-    mix = vo_stereo * 0.92 + bgm_stereo * duck_gain[:, None]
-
-    swell = synthesize_glide_swell() * 0.14
-    hud_tick = synthesize_hud_tick() * 0.09
-
-    for sc_idx, sc in enumerate(plan["scenes"]):
-        if sc_idx > 0:
-            s_idx = max(0, int((float(sc["startSec"]) - 0.5) * SAMPLE_RATE))
-            e_idx = min(n_samples, s_idx + len(swell))
-            if e_idx > s_idx:
-                mix[s_idx:e_idx] += swell[: e_idx - s_idx]
-
-        for b in sc.get("beats", []):
-            t_idx = max(0, int(float(b["startSec"]) * SAMPLE_RATE))
-            te_idx = min(n_samples, t_idx + len(hud_tick))
-            if te_idx > t_idx:
-                mix[t_idx:te_idx] += hud_tick[: te_idx - t_idx]
+    sfx_bank = make_sfx_bank()
+    for sc in plan["scenes"]:
+        cue = sc.get("sfx", "pop_snap")
+        snd = sfx_bank.get(cue, sfx_bank["pop_snap"])
+        start_idx = max(0, int(float(sc["startSec"]) * SAMPLE_RATE))
+        end_idx = min(n_samples, start_idx + len(snd))
+        if end_idx > start_idx:
+            mix[start_idx:end_idx] += snd[: end_idx - start_idx]
 
     mix = np.tanh(mix * 0.95)
     master_wav = WORK_DIR / "master_audio.wav"
@@ -1591,7 +1384,7 @@ def main() -> None:
         check=True,
     )
     master_wav.unlink(missing_ok=True)
-    print(f"[mix_audio] Built master_audio.m4a ({n_samples / SAMPLE_RATE:.2f}s).")
+    print(f"[mix_audio] Built master_audio.m4a ({n_samples / SAMPLE_RATE:.2f}s, include_bgm={include_bgm}).")
 
 
 if __name__ == "__main__":
@@ -1705,66 +1498,65 @@ if __name__ == "__main__":
 '''
 
 FILES["src/types.ts"] = r'''
-export type V3 = [number, number, number];
+export type BackdropTheme =
+  | "night_mountains"
+  | "sunset_horizon"
+  | "daylight_city"
+  | "graph_paper"
+  | "notebook_lined"
+  | "world_map"
+  | "warm_office"
+  | "steel_vault"
+  | "dark_industrial"
+  | "news_document"
+  | "split_3panel"
+  | "black_title_card";
 
-export interface DynamicSceneProps {
+export type CameraMove2D =
+  | "push_in"
+  | "pull_out"
+  | "pan_right"
+  | "pan_left"
+  | "pan_up"
+  | "shake_hit";
+
+export type Transition2D =
+  | "slide_left"
+  | "slide_up"
+  | "wipe_right"
+  | "zoom_dissolve"
+  | "flash_cut";
+
+export interface Scene2DProps {
   frame: number;
   localFrame: number;
+  localTime: number;
+  durationSec: number;
   progress: number;
+  peakTimes: number[];
   accentHex: string;
+  backdropTheme: BackdropTheme;
+  cameraMove: CameraMove2D;
+  isVertical: boolean;
 }
 
-export interface HudCallout {
-  label: string;
-  anchorPct: [number, number];
-  boxPct: [number, number];
-}
-
-export interface StatCounter {
-  label: string;
-  fromVal: number;
-  toVal: number;
-  prefix?: string;
-  suffix?: string;
-  decimals?: number;
-}
-
-export interface VisualBeat {
-  id: string;
-  startSec: number;
-  endSec: number;
-  triggerSec: number;
-  cameraOffset: V3;
-  lookOffset: V3;
-  callouts: HudCallout[];
-  statCounter: StatCounter | null;
-}
-
-export interface SubtitleWord {
-  text: string;
-  highlight: boolean;
-}
-
-export interface SubtitleChunk {
-  startSec: number;
-  endSec: number;
-  words: SubtitleWord[];
-}
-
-export interface DocumentaryScene {
+export interface CartoonScene {
   id: string;
   componentName: string;
   visualConcept: string;
   visualSpec: string;
+  titleText: string;
+  backdropTheme: BackdropTheme;
+  cameraMove: CameraMove2D;
+  transition: Transition2D;
+  sfx: string;
+  accentHex: string;
   startSec: number;
   endSec: number;
-  worldPos: V3;
-  bgHex: string;
-  accentHex: string;
-  beats: VisualBeat[];
+  localPeakTimes: number[];
 }
 
-export interface DocumentaryPlan {
+export interface CartoonPlan {
   channel: string;
   fps: number;
   width: number;
@@ -1773,1514 +1565,1180 @@ export interface DocumentaryPlan {
   hasAudio: boolean;
   bpm: number;
   emphasisPeaksSec: number[];
-  subtitleChunks: SubtitleChunk[];
-  scenes: DocumentaryScene[];
+  scenes: CartoonScene[];
 }
 '''
 
-FILES["src/components/StudioKit.tsx"] = r'''
-import React, { Component, Suspense, useEffect, useMemo } from "react";
-import { useGLTF } from "@react-three/drei";
-import { staticFile } from "remotion";
-import * as THREE from "three";
-import type { V3 } from "../types";
+FILES["src/components/CartoonKit2D.tsx"] = r'''
+import React, { useId } from "react";
+import { loadFont as loadCaveat } from "@remotion/google-fonts/Caveat";
+import { loadFont as loadPermanentMarker } from "@remotion/google-fonts/PermanentMarker";
+import { loadFont as loadSpaceGrotesk } from "@remotion/google-fonts/SpaceGrotesk";
+import { interpolate, spring, useVideoConfig } from "remotion";
+import type { BackdropTheme, CameraMove2D } from "../types";
 
-const safeVec = (v?: V3, fallback: V3 = [0, 0, 0]): V3 =>
-  Array.isArray(v) && v.length === 3 ? [Number(v[0]) || 0, Number(v[1]) || 0, Number(v[2]) || 0] : fallback;
+const { fontFamily: HAND_FONT } = loadCaveat("normal", { weights: ["700"], subsets: ["latin"] });
+const { fontFamily: MARKER_FONT } = loadPermanentMarker("normal", { weights: ["400"], subsets: ["latin"] });
+const { fontFamily: UI_FONT } = loadSpaceGrotesk("normal", { weights: ["600", "700"], subsets: ["latin"] });
 
-const safeHex = (c?: string, fallback = "#3B4E6B"): string =>
-  typeof c === "string" && c.trim() ? c.trim() : fallback;
+const INK = "#111827";
 
-const liftStructuralHex = (hex: string): string => {
-  try {
-    const c = new THREE.Color(hex);
-    const lum = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
-    if (lum < 0.08) {
-      c.lerp(new THREE.Color("#364A66"), 0.72);
-      return "#" + c.getHexString();
-    }
-    if (lum < 0.14) {
-      c.lerp(new THREE.Color("#425878"), 0.45);
-      return "#" + c.getHexString();
-    }
-    return hex;
-  } catch {
-    return "#364A66";
-  }
-};
-
-export const MatteBox: React.FC<{
-  pos?: V3;
-  rot?: V3;
-  size?: V3;
-  color?: string;
-  emissive?: string;
-  emissiveIntensity?: number;
-  roughness?: number;
-  metalness?: number;
-  opacity?: number;
-  edges?: boolean;
-  edgeColor?: string;
-}> = ({
-  pos,
-  rot,
-  size = [1, 1, 1],
-  color = "#3B4E6B",
-  emissive,
-  emissiveIntensity = 1.4,
-  roughness = 0.42,
-  metalness = 0.32,
-  opacity = 1,
-  edges = true,
-  edgeColor = "#7DD3FC",
-}) => {
-  const s = safeVec(size, [1, 1, 1]);
-  const sx = Math.max(0.01, s[0]);
-  const sy = Math.max(0.01, s[1]);
-  const sz = Math.max(0.01, s[2]);
-
-  const { geo, edgeGeo } = useMemo(() => {
-    const g = new THREE.BoxGeometry(sx, sy, sz);
-    const e = new THREE.EdgesGeometry(g, 20);
-    return { geo: g, edgeGeo: e };
-  }, [sx, sy, sz]);
-
-  useEffect(() => () => {
-    geo.dispose();
-    edgeGeo.dispose();
-  }, [geo, edgeGeo]);
-
-  const finalColor = emissive ? safeHex(color) : liftStructuralHex(safeHex(color));
-
-  return (
-    <group position={safeVec(pos)} rotation={safeVec(rot)}>
-      <mesh geometry={geo}>
-        <meshStandardMaterial
-          color={finalColor}
-          emissive={emissive ? safeHex(emissive) : "#000000"}
-          emissiveIntensity={emissive ? emissiveIntensity : 0}
-          roughness={roughness}
-          metalness={metalness}
-          transparent={opacity < 1}
-          opacity={opacity}
-        />
-      </mesh>
-      {edges && !emissive && (
-        <lineSegments geometry={edgeGeo}>
-          <lineBasicMaterial color={safeHex(edgeColor)} transparent opacity={0.44} />
-        </lineSegments>
-      )}
-    </group>
-  );
-};
-
-export const MatteCylinder: React.FC<{
-  pos?: V3;
-  rot?: V3;
-  radiusTop?: number;
-  radiusBottom?: number;
-  height?: number;
-  segments?: number;
-  openEnded?: boolean;
-  thetaStart?: number;
-  thetaLength?: number;
-  doubleSide?: boolean;
-  color?: string;
-  emissive?: string;
-  emissiveIntensity?: number;
-  roughness?: number;
-  metalness?: number;
-  edges?: boolean;
-  edgeColor?: string;
-}> = ({
-  pos,
-  rot,
-  radiusTop = 0.5,
-  radiusBottom = 0.5,
-  height = 1,
-  segments = 24,
-  openEnded = false,
-  thetaStart = 0,
-  thetaLength = Math.PI * 2,
-  doubleSide = false,
-  color = "#475569",
-  emissive,
-  emissiveIntensity = 1.4,
-  roughness = 0.36,
-  metalness = 0.4,
-  edges = true,
-  edgeColor = "#93C5FD",
-}) => {
-  const { geo, edgeGeo } = useMemo(() => {
-    const g = new THREE.CylinderGeometry(
-      radiusTop,
-      radiusBottom,
-      height,
-      segments,
-      1,
-      openEnded,
-      thetaStart,
-      thetaLength
-    );
-    const e = new THREE.EdgesGeometry(g, 24);
-    return { geo: g, edgeGeo: e };
-  }, [radiusTop, radiusBottom, height, segments, openEnded, thetaStart, thetaLength]);
-
-  useEffect(() => () => {
-    geo.dispose();
-    edgeGeo.dispose();
-  }, [geo, edgeGeo]);
-
-  const finalColor = emissive ? safeHex(color) : liftStructuralHex(safeHex(color));
-
-  return (
-    <group position={safeVec(pos)} rotation={safeVec(rot)}>
-      <mesh geometry={geo}>
-        <meshStandardMaterial
-          color={finalColor}
-          emissive={emissive ? safeHex(emissive) : "#000000"}
-          emissiveIntensity={emissive ? emissiveIntensity : 0}
-          roughness={roughness}
-          metalness={metalness}
-          side={doubleSide ? THREE.DoubleSide : THREE.FrontSide}
-        />
-      </mesh>
-      {edges && !emissive && (
-        <lineSegments geometry={edgeGeo}>
-          <lineBasicMaterial color={safeHex(edgeColor)} transparent opacity={0.44} />
-        </lineSegments>
-      )}
-    </group>
-  );
-};
-
-export const MatteSphere: React.FC<{
-  pos?: V3;
-  scale?: V3;
-  radius?: number;
-  color?: string;
-  emissive?: string;
-  emissiveIntensity?: number;
-  roughness?: number;
-  metalness?: number;
-}> = ({
-  pos,
-  scale,
-  radius = 0.5,
-  color = "#64748B",
-  emissive,
-  emissiveIntensity = 1.5,
-  roughness = 0.35,
-  metalness = 0.3,
-}) => (
-  <mesh position={safeVec(pos)} scale={safeVec(scale, [1, 1, 1])}>
-    <sphereGeometry args={[radius, 18, 16]} />
-    <meshStandardMaterial
-      color={emissive ? safeHex(color) : liftStructuralHex(safeHex(color))}
-      emissive={emissive ? safeHex(emissive) : "#000000"}
-      emissiveIntensity={emissive ? emissiveIntensity : 0}
-      roughness={roughness}
-      metalness={metalness}
-    />
-  </mesh>
-);
-
-export const MatteTorus: React.FC<{
-  pos?: V3;
-  rot?: V3;
-  radius?: number;
-  tube?: number;
-  arc?: number;
-  color?: string;
-  emissive?: string;
-  emissiveIntensity?: number;
-}> = ({
-  pos,
-  rot,
-  radius = 1,
-  tube = 0.12,
-  arc = Math.PI * 2,
-  color = "#475569",
-  emissive,
-  emissiveIntensity = 1.5,
-}) => (
-  <mesh position={safeVec(pos)} rotation={safeVec(rot)}>
-    <torusGeometry args={[radius, tube, 12, 28, arc]} />
-    <meshStandardMaterial
-      color={emissive ? safeHex(color) : liftStructuralHex(safeHex(color))}
-      emissive={emissive ? safeHex(emissive) : "#000000"}
-      emissiveIntensity={emissive ? emissiveIntensity : 0}
-      roughness={0.35}
-      metalness={0.45}
-    />
-  </mesh>
-);
-
-export const MatteCone: React.FC<{
-  pos?: V3;
-  rot?: V3;
-  radius?: number;
-  height?: number;
-  segments?: number;
-  color?: string;
-  emissive?: string;
-  emissiveIntensity?: number;
-  edges?: boolean;
-  edgeColor?: string;
-}> = ({
-  pos,
-  rot,
-  radius = 0.5,
-  height = 1,
-  segments = 20,
-  color = "#475569",
-  emissive,
-  emissiveIntensity = 1.4,
-  edges = true,
-  edgeColor = "#93C5FD",
-}) => {
-  const { geo, edgeGeo } = useMemo(() => {
-    const g = new THREE.ConeGeometry(radius, height, segments);
-    const e = new THREE.EdgesGeometry(g, 24);
-    return { geo: g, edgeGeo: e };
-  }, [radius, height, segments]);
-
-  useEffect(() => () => {
-    geo.dispose();
-    edgeGeo.dispose();
-  }, [geo, edgeGeo]);
-
-  return (
-    <group position={safeVec(pos)} rotation={safeVec(rot)}>
-      <mesh geometry={geo}>
-        <meshStandardMaterial
-          color={emissive ? safeHex(color) : liftStructuralHex(safeHex(color))}
-          emissive={emissive ? safeHex(emissive) : "#000000"}
-          emissiveIntensity={emissive ? emissiveIntensity : 0}
-          roughness={0.4}
-          metalness={0.35}
-        />
-      </mesh>
-      {edges && !emissive && (
-        <lineSegments geometry={edgeGeo}>
-          <lineBasicMaterial color={safeHex(edgeColor)} transparent opacity={0.44} />
-        </lineSegments>
-      )}
-    </group>
-  );
-};
-
-export const GlassShell: React.FC<{
-  pos?: V3;
-  rot?: V3;
-  shape?: "box" | "cylinder";
-  size?: V3;
-  radius?: number;
-  height?: number;
-  color?: string;
-  edgeColor?: string;
-  opacity?: number;
-}> = ({
-  pos,
-  rot,
-  shape = "box",
-  size = [2, 2, 2],
-  radius = 1,
-  height = 2,
-  color = "#38BDF8",
-  edgeColor = "#7DD3FC",
-  opacity = 0.22,
-}) => {
-  const s = safeVec(size, [2, 2, 2]);
-  const { geo, edgeGeo } = useMemo(() => {
-    const g =
-      shape === "cylinder"
-        ? new THREE.CylinderGeometry(radius, radius, height, 24)
-        : new THREE.BoxGeometry(s[0], s[1], s[2]);
-    const e = new THREE.EdgesGeometry(g, 24);
-    return { geo: g, edgeGeo: e };
-  }, [shape, radius, height, s[0], s[1], s[2]]);
-
-  useEffect(() => () => {
-    geo.dispose();
-    edgeGeo.dispose();
-  }, [geo, edgeGeo]);
-
-  return (
-    <group position={safeVec(pos)} rotation={safeVec(rot)}>
-      <mesh geometry={geo}>
-        <meshStandardMaterial
-          color={safeHex(color)}
-          transparent
-          opacity={opacity}
-          roughness={0.15}
-          metalness={0.15}
-          depthWrite={false}
-        />
-      </mesh>
-      <lineSegments geometry={edgeGeo}>
-        <lineBasicMaterial color={safeHex(edgeColor)} transparent opacity={0.7} />
-      </lineSegments>
-    </group>
-  );
-};
-
-export const HardwareRack: React.FC<{
-  pos?: V3;
-  rot?: V3;
-  size?: V3;
-  bays?: number;
-  accentHex?: string;
+export const SceneBackdrop2D: React.FC<{
+  theme: BackdropTheme;
   frame: number;
-}> = ({ pos, rot, size = [1.0, 2.2, 1.0], bays = 6, accentHex = "#22D3EE", frame }) => {
-  const [w, h, d] = safeVec(size, [1.0, 2.2, 1.0]);
-  const safeBays = Math.max(3, Math.min(10, Math.round(bays)));
-  const bayStep = (h * 0.78) / safeBays;
+  accentHex?: string;
+}> = ({ theme, frame, accentHex = "#22C55E" }) => {
+  const uid = useId().replace(/:/g, "");
+  const gradId = `bg_${uid}`;
+  const cloudDrift = (frame * 0.45) % 2100;
 
+  if (theme === "black_title_card") {
+    return <rect x={-100} y={-100} width={2200} height={2200} fill="#05070B" />;
+  }
+
+  if (theme === "night_mountains") {
+    return (
+      <g>
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#09111E" />
+            <stop offset="68%" stopColor="#142A3E" />
+            <stop offset="100%" stopColor="#1D3E4D" />
+          </linearGradient>
+        </defs>
+        <rect x={-100} y={-100} width={2200} height={2200} fill={`url(#${gradId})`} />
+        {[
+          [180, 140], [420, 90], [690, 200], [980, 110], [1340, 160], [1680, 100], [1810, 240], [310, 320], [1510, 290],
+        ].map(([sx, sy], i) => {
+          const tw = 0.35 + 0.65 * Math.abs(Math.sin(frame * 0.05 + i));
+          return <circle key={i} cx={sx} cy={sy} r={3 + (i % 2)} fill="#E2E8F0" opacity={tw} />;
+        })}
+        <polygon points="-50,920 260,640 540,860 890,560 1240,840 1580,620 1980,900 1980,2000 -50,2000" fill="#0F1F2E" stroke={INK} strokeWidth={4} />
+        <rect x={-50} y={840} width={2050} height={1200} fill="#182538" stroke={INK} strokeWidth={4} />
+      </g>
+    );
+  }
+
+  if (theme === "sunset_horizon") {
+    return (
+      <g>
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#D97762" />
+            <stop offset="55%" stopColor="#F4B27A" />
+            <stop offset="100%" stopColor="#FDE2A6" />
+          </linearGradient>
+        </defs>
+        <rect x={-100} y={-100} width={2200} height={2200} fill={`url(#${gradId})`} />
+        <circle cx={340} cy={310} r={115} fill="#FEF3C7" stroke="#F59E0B" strokeWidth={5} />
+        <ellipse cx={(200 + cloudDrift) % 2100 - 100} cy={220} rx={120} ry={34} fill="#FFEAD5" opacity={0.85} />
+        <ellipse cx={(1100 + cloudDrift * 0.7) % 2100 - 100} cy={170} rx={150} ry={38} fill="#FFEAD5" opacity={0.75} />
+        <polygon points="-40,860 360,560 720,780 1120,520 1540,790 1980,580 1980,2000 -40,2000" fill="#B57B6B" stroke={INK} strokeWidth={4} />
+        <rect x={-50} y={820} width={2050} height={1200} fill="#C69262" stroke={INK} strokeWidth={4} />
+      </g>
+    );
+  }
+
+  if (theme === "daylight_city" || theme === "split_3panel") {
+    return (
+      <g>
+        <rect x={-100} y={-100} width={2200} height={2200} fill="#CBE4F5" />
+        <ellipse cx={(300 + cloudDrift) % 2100 - 100} cy={180} rx={130} ry={40} fill="#FFFFFF" opacity={0.9} />
+        <ellipse cx={(1250 + cloudDrift * 0.6) % 2100 - 100} cy={130} rx={160} ry={44} fill="#FFFFFF" opacity={0.85} />
+        <rect x={-50} y={820} width={2050} height={1200} fill="#9CA3AF" stroke={INK} strokeWidth={4} />
+      </g>
+    );
+  }
+
+  if (theme === "graph_paper") {
+    return (
+      <g>
+        <rect x={-100} y={-100} width={2200} height={2200} fill="#EAE6DC" />
+        {Array.from({ length: 28 }).map((_, i) => (
+          <line key={`v${i}`} x1={i * 80} y1={-50} x2={i * 80} y2={2000} stroke="#D4CFC2" strokeWidth={2} />
+        ))}
+        {Array.from({ length: 26 }).map((_, i) => (
+          <line key={`h${i}`} x1={-50} y1={i * 80} x2={2000} y2={i * 80} stroke="#D4CFC2" strokeWidth={2} />
+        ))}
+      </g>
+    );
+  }
+
+  if (theme === "notebook_lined") {
+    return (
+      <g>
+        <rect x={-100} y={-100} width={2200} height={2200} fill="#F7F3E9" />
+        <line x1={210} y1={-50} x2={210} y2={2000} stroke="#EF4444" strokeWidth={4} opacity={0.55} />
+        {Array.from({ length: 28 }).map((_, i) => (
+          <line key={i} x1={-50} y1={120 + i * 68} x2={2000} y2={120 + i * 68} stroke="#93C5FD" strokeWidth={2} opacity={0.65} />
+        ))}
+      </g>
+    );
+  }
+
+  if (theme === "world_map") {
+    return (
+      <g>
+        <rect x={-100} y={-100} width={2200} height={2200} fill="#8FB5C9" />
+        {Array.from({ length: 14 }).map((_, i) => (
+          <line key={`g${i}`} x1={i * 160} y1={-50} x2={i * 160} y2={2000} stroke="#7CA3B8" strokeWidth={2} strokeDasharray="8 8" />
+        ))}
+      </g>
+    );
+  }
+
+  if (theme === "warm_office") {
+    return (
+      <g>
+        <rect x={-100} y={-100} width={2200} height={2200} fill="#C9B99F" />
+        <rect x={120} y={90} width={380} height={280} fill="#BAE6FD" stroke={INK} strokeWidth={5} />
+        <line x1={310} y1={90} x2={310} y2={370} stroke={INK} strokeWidth={4} />
+        <rect x={-50} y={760} width={2050} height={1200} fill="#6F4E37" stroke={INK} strokeWidth={5} />
+      </g>
+    );
+  }
+
+  if (theme === "steel_vault") {
+    return (
+      <g>
+        <rect x={-100} y={-100} width={2200} height={2200} fill="#374151" />
+        <polygon points="960,-40 240,1200 1680,1200" fill="#FDE68A" opacity={0.14} />
+        <rect x={-50} y={840} width={2050} height={1200} fill="#1F2937" stroke={INK} strokeWidth={5} />
+      </g>
+    );
+  }
+
+  if (theme === "news_document") {
+    return (
+      <g>
+        <rect x={-100} y={-100} width={2200} height={2200} fill="#CBD5E1" />
+        <rect x={140} y={100} width={1640} height={880} rx={14} fill="#F8FAFC" stroke={INK} strokeWidth={5} />
+      </g>
+    );
+  }
+
+  // dark_industrial default
   return (
-    <group position={safeVec(pos)} rotation={safeVec(rot)}>
-      <MatteBox pos={[0, 0, 0]} size={[w, h, d]} color="#2F4059" edgeColor={accentHex} />
-      <MatteBox pos={[0, 0, d * 0.04]} size={[w * 0.86, h * 0.88, d * 0.94]} color="#1E293B" edges={false} />
-      {[-w * 0.44, w * 0.44].map((rx, ri) => (
-        <MatteBox key={ri} pos={[rx, 0, d * 0.48]} size={[w * 0.08, h * 0.96, 0.05]} color="#64748B" />
+    <g>
+      <rect x={-100} y={-100} width={2200} height={2200} fill="#1E293B" />
+      {[280, 680, 1240, 1640].map((lx, i) => (
+        <rect key={i} x={lx - 80} y={40} width={160} height={24} rx={8} fill={accentHex} opacity={0.85} stroke={INK} strokeWidth={3} />
       ))}
-      {Array.from({ length: safeBays }).map((_, bi) => {
-        const by = -h * 0.36 + bi * bayStep;
-        const pulse = 0.7 + 0.9 * Math.max(0, Math.sin((frame / 30) * 4.5 - bi * 0.6));
-        return (
-          <group key={bi} position={[0, by, d * 0.47]}>
-            <MatteBox size={[w * 0.78, bayStep * 0.68, 0.08]} color="#475569" edgeColor="#94A3B8" />
-            <MatteBox
-              pos={[-w * 0.25, 0, 0.05]}
-              size={[w * 0.22, bayStep * 0.22, 0.02]}
-              color={accentHex}
-              emissive={accentHex}
-              emissiveIntensity={pulse}
-              edges={false}
-            />
-          </group>
-        );
-      })}
-      <MatteBox pos={[0, h * 0.52, 0]} size={[w * 0.84, 0.08, d * 0.84]} color="#64748B" edgeColor={accentHex} />
-    </group>
+      <rect x={-50} y={840} width={2050} height={1200} fill="#334155" stroke={INK} strokeWidth={5} />
+      <rect x={-50} y={840} width={2050} height={26} fill="#F59E0B" stroke={INK} strokeWidth={3} />
+    </g>
   );
 };
 
-export const DataHallBuilding: React.FC<{
-  pos?: V3;
-  size?: V3;
-  accentHex?: string;
+export const Camera2D: React.FC<{
+  move: CameraMove2D;
   progress: number;
   frame: number;
-}> = ({ pos, size = [3.2, 1.5, 2.2], accentHex = "#22D3EE", progress, frame }) => {
-  const [w, h, d] = safeVec(size, [3.2, 1.5, 2.2]);
-  const span = 0.45;
-  const raw = Math.max(0, Math.min(1, (progress - 0.18) / span));
-  const lift = raw * raw * (3 - 2 * raw) * 1.15;
+  peakTimes?: number[];
+  localTime: number;
+  children?: React.ReactNode;
+}> = ({ move, progress, frame, peakTimes = [], localTime, children }) => {
+  const ease = progress * progress * (3 - 2 * progress);
+  let scale = 1;
+  let tx = 0;
+  let ty = 0;
 
-  return (
-    <group position={safeVec(pos)}>
-      {/* Concrete Slab Base */}
-      <MatteBox pos={[0, -h * 0.52, 0]} size={[w * 1.12, 0.16, d * 1.15]} color="#334155" edgeColor={accentHex} />
-      {/* 4 Ribbed Concrete Walls (Open Top for Roof Cutaway) */}
-      <MatteBox pos={[0, 0, -d * 0.48]} size={[w, h, 0.14]} color="#475569" edgeColor={accentHex} />
-      <MatteBox pos={[0, 0, d * 0.48]} size={[w, h, 0.14]} color="#3B4E6B" edgeColor={accentHex} />
-      <MatteBox pos={[-w * 0.48, 0, 0]} size={[0.14, h, d]} color="#475569" edgeColor={accentHex} />
-      <MatteBox pos={[w * 0.48, 0, 0]} size={[0.14, h, d]} color="#475569" edgeColor={accentHex} />
-      {/* Vertical Concrete Pilaster Buttresses */}
-      {[-w * 0.3, 0, w * 0.3].map((px, i) => (
-        <MatteBox key={i} pos={[px, 0, d * 0.53]} size={[0.18, h * 1.02, 0.1]} color="#64748B" edgeColor={accentHex} />
-      ))}
-      {/* Glowing Internal Racks Revealed Inside */}
-      {[-w * 0.25, 0, w * 0.25].map((rx, ri) => (
-        <HardwareRack key={ri} pos={[rx, -0.05, 0]} size={[w * 0.2, h * 0.82, d * 0.65]} bays={4} accentHex={accentHex} frame={frame} />
-      ))}
-      {/* Lifting Cutaway Roof Slab + Rooftop Chillers */}
-      <group position={[0, h * 0.54 + lift, 0]}>
-        <MatteBox size={[w * 1.04, 0.14, d * 1.04]} color="#64748B" edgeColor={accentHex} />
-        {[-w * 0.28, 0, w * 0.28].map((cx, ci) => (
-          <MatteBox key={ci} pos={[cx, 0.16, 0]} size={[0.45, 0.2, d * 0.55]} color="#3B4E6B" edgeColor={accentHex} />
-        ))}
-      </group>
-    </group>
-  );
+  if (move === "push_in") {
+    scale = 1 + ease * 0.08;
+  } else if (move === "pull_out") {
+    scale = 1.09 - ease * 0.09;
+  } else if (move === "pan_right") {
+    scale = 1.05;
+    tx = 32 - ease * 64;
+  } else if (move === "pan_left") {
+    scale = 1.05;
+    tx = -32 + ease * 64;
+  } else if (move === "pan_up") {
+    scale = 1.05;
+    ty = 26 - ease * 52;
+  } else if (move === "shake_hit") {
+    scale = 1.04;
+  }
+
+  // Punchy human-edited camera impact jolt on vocal emphasis peaks
+  let shakeX = 0;
+  let shakeY = 0;
+  for (const pt of peakTimes) {
+    const dt = localTime - pt;
+    if (dt >= 0 && dt < 0.28) {
+      const decay = 1 - dt / 0.28;
+      shakeX += Math.sin(frame * 2.7) * 9 * decay;
+      shakeY += Math.cos(frame * 3.1) * 7 * decay;
+    }
+  }
+
+  const cx = 960;
+  const cy = 540;
+  const xform = `translate(${cx + tx + shakeX} ${cy + ty + shakeY}) scale(${scale}) translate(${-cx} ${-cy})`;
+
+  return <g transform={xform}>{children}</g>;
 };
 
-export const CitySkylineBlock: React.FC<{
-  pos?: V3;
+export const CartoonCharacter2D: React.FC<{
+  x: number;
+  y: number;
   scale?: number;
-  accentHex?: string;
-  frame: number;
-}> = ({ pos, scale = 1, accentHex = "#F59E0B", frame }) => {
-  const towers: { x: number; z: number; w: number; h: number; d: number }[] = [
-    { x: -0.9, z: -0.4, w: 0.42, h: 1.5, d: 0.42 },
-    { x: -0.35, z: 0.1, w: 0.5, h: 2.2, d: 0.5 },
-    { x: 0.25, z: -0.25, w: 0.46, h: 1.85, d: 0.46 },
-    { x: 0.85, z: 0.2, w: 0.4, h: 1.3, d: 0.4 },
-    { x: -0.55, z: 0.65, w: 0.36, h: 1.1, d: 0.36 },
-    { x: 0.45, z: 0.65, w: 0.44, h: 1.6, d: 0.44 },
-  ];
-
-  return (
-    <group position={safeVec(pos)} scale={[scale, scale, scale]}>
-      <MatteBox pos={[0, -0.82, 0]} size={[2.7, 0.14, 2.0]} color="#2F4059" edgeColor={accentHex} />
-      {towers.map((t, i) => {
-        const flicker = 1.0 + 0.45 * Math.sin((frame / 30) * 3.0 + i * 1.1);
-        return (
-          <group key={i} position={[t.x, -0.75 + t.h * 0.5, t.z]}>
-            <MatteBox size={[t.w, t.h, t.d]} color="#3B4E6B" edgeColor="#7DD3FC" />
-            {[0.25, 0, -0.25].map((wy, wi) => (
-              <MatteBox
-                key={wi}
-                pos={[0, wy * t.h, t.d * 0.51]}
-                size={[t.w * 0.72, 0.09, 0.02]}
-                color={accentHex}
-                emissive={accentHex}
-                emissiveIntensity={flicker}
-                edges={false}
-              />
-            ))}
-          </group>
-        );
-      })}
-    </group>
-  );
-};
-
-export const PowerPylon: React.FC<{
-  pos?: V3;
-  height?: number;
-  accentHex?: string;
-}> = ({ pos, height = 2.4, accentHex = "#F59E0B" }) => (
-  <group position={safeVec(pos)}>
-    <MatteBox pos={[0, -height * 0.48, 0]} size={[0.9, 0.14, 0.9]} color="#334155" edgeColor={accentHex} />
-    <MatteCylinder
-      pos={[0, 0, 0]}
-      radiusTop={0.14}
-      radiusBottom={0.44}
-      height={height}
-      segments={4}
-      color="#64748B"
-      edgeColor={accentHex}
-    />
-    {[height * 0.2, height * 0.38].map((cy, ci) => {
-      const span = ci === 0 ? 1.55 : 1.15;
-      return (
-        <group key={ci} position={[0, cy, 0]}>
-          <MatteBox size={[span, 0.08, 0.14]} color="#94A3B8" edgeColor={accentHex} />
-          {[-span * 0.45, span * 0.45].map((ix, ii) => (
-            <MatteCylinder
-              key={ii}
-              pos={[ix, -0.14, 0]}
-              radiusTop={0.05}
-              radiusBottom={0.07}
-              height={0.22}
-              color={accentHex}
-              emissive={accentHex}
-              emissiveIntensity={1.6}
-              edges={false}
-            />
-          ))}
-        </group>
-      );
-    })}
-  </group>
-);
-
-export const CoolingTower: React.FC<{
-  pos?: V3;
-  radius?: number;
-  height?: number;
-  accentHex?: string;
-  cutaway?: boolean;
-  frame: number;
-}> = ({ pos, radius = 0.95, height = 2.2, accentHex = "#38BDF8", cutaway = true, frame }) => {
-  const segH = height / 3;
-  const spin = (frame / 30) * 5.0;
-
-  return (
-    <group position={safeVec(pos)}>
-      <MatteCylinder pos={[0, -height * 0.48, 0]} radiusTop={radius * 1.15} radiusBottom={radius * 1.18} height={0.14} color="#334155" edgeColor={accentHex} />
-      {[
-        { y: -segH, rTop: radius * 0.85, rBot: radius * 1.08 },
-        { y: 0, rTop: radius * 0.72, rBot: radius * 0.85 },
-        { y: segH, rTop: radius * 0.8, rBot: radius * 0.72 },
-      ].map((seg, i) => (
-        <MatteCylinder
-          key={i}
-          pos={[0, seg.y, 0]}
-          radiusTop={seg.rTop}
-          radiusBottom={seg.rBot}
-          height={segH + 0.02}
-          openEnded={true}
-          thetaStart={cutaway ? 0.55 : 0}
-          thetaLength={cutaway ? Math.PI * 1.38 : Math.PI * 2}
-          doubleSide={true}
-          color="#475569"
-          edgeColor={accentHex}
-        />
-      ))}
-      <MatteCylinder pos={[0, -height * 0.4, 0]} radiusTop={radius * 0.96} radiusBottom={radius * 0.96} height={0.14} color={accentHex} emissive={accentHex} emissiveIntensity={1.4} edges={false} />
-      <group position={[0, -height * 0.12, 0]} rotation={[0, spin, 0]}>
-        <MatteBox size={[radius * 1.25, 0.06, 0.16]} color="#CBD5E1" edgeColor={accentHex} />
-        <MatteBox size={[0.16, 0.06, radius * 1.25]} color="#CBD5E1" edgeColor={accentHex} />
-      </group>
-      <RisingParticles origin={[0, height * 0.45, 0]} spread={radius * 0.55} height={1.4} count={8} size={0.16} color="#E2E8F0" speed={0.45} frame={frame} />
-    </group>
-  );
-};
-
-export const BatteryContainer: React.FC<{
-  pos?: V3;
-  size?: V3;
-  accentHex?: string;
-  frame: number;
-}> = ({ pos, size = [1.5, 1.3, 1.1], accentHex = "#10B981", frame }) => {
-  const [w, h, d] = safeVec(size, [1.5, 1.3, 1.1]);
-  const charge = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin((frame / 30) * 2.2));
-  return (
-    <group position={safeVec(pos)}>
-      <MatteBox size={[w, h, d]} color="#475569" edgeColor={accentHex} />
-      <MatteBox pos={[0, h * 0.55, 0]} size={[w * 0.72, 0.14, d * 0.72]} color="#64748B" edgeColor={accentHex} />
-      {[-w * 0.25, 0, w * 0.25].map((vx, i) => (
-        <MatteBox key={i} pos={[vx, 0.05, d * 0.51]} size={[w * 0.14, h * 0.65, 0.03]} color="#2B3B52" />
-      ))}
-      <MatteBox
-        pos={[w * 0.38, -h * 0.38 + charge * h * 0.38, d * 0.52]}
-        size={[0.14, Math.max(0.14, charge * h * 0.75), 0.04]}
-        color={accentHex}
-        emissive={accentHex}
-        emissiveIntensity={1.9}
-        edges={false}
-      />
-    </group>
-  );
-};
-
-export const FinnedHousing: React.FC<{
-  pos?: V3;
-  rot?: V3;
-  radius?: number;
-  height?: number;
-  finCount?: number;
-  color?: string;
-  accentHex?: string;
-  cutaway?: boolean;
+  variant?: "ceo" | "engineer" | "worker" | "suit" | "operator";
+  mood?: "neutral" | "shocked" | "worried" | "happy" | "smug" | "angry";
+  pose?: "stand" | "point_right" | "point_up" | "hold_up" | "hands_head" | "celebrate";
+  glasses?: boolean;
+  hardHat?: boolean;
+  sweatDrop?: boolean;
+  flip?: boolean;
   frame: number;
 }> = ({
-  pos,
-  rot,
-  radius = 0.9,
-  height = 1.8,
-  finCount = 8,
-  color = "#3B4E6B",
-  accentHex = "#22D3EE",
-  cutaway = false,
+  x,
+  y,
+  scale = 1,
+  variant = "engineer",
+  mood = "neutral",
+  pose = "stand",
+  glasses = false,
+  hardHat = false,
+  sweatDrop = false,
+  flip = false,
   frame,
 }) => {
-  const safeFins = Math.max(4, Math.min(12, Math.round(finCount)));
-  const pulse = 1.2 + Math.sin((frame / 30) * 3.5) * 0.35;
+  const bob = Math.sin(frame * 0.1) * 4;
+  const blink = frame % 95 >= 91;
+  const wave = Math.sin(frame * 0.16) * 8;
+  const dir = flip ? -1 : 1;
+
+  const outfitMap: Record<string, string> = {
+    ceo: "#1F2937",
+    engineer: "#2563EB",
+    worker: "#EA580C",
+    suit: "#334155",
+    operator: "#059669",
+  };
+  const bodyColor = outfitMap[variant] || "#2563EB";
+  const hairColor = variant === "ceo" ? "#CBD5E1" : "#374151";
+  const skinColor = "#F3C69F";
+  const sweatY = ((frame * 2.4) % 34);
 
   return (
-    <group position={safeVec(pos)} rotation={safeVec(rot)}>
-      <MatteCylinder pos={[0, height * 0.48, 0]} radiusTop={radius * 1.18} radiusBottom={radius * 1.18} height={0.14} color="#64748B" edgeColor={accentHex} />
-      <MatteCylinder pos={[0, -height * 0.48, 0]} radiusTop={radius * 1.18} radiusBottom={radius * 1.18} height={0.14} color="#64748B" edgeColor={accentHex} />
-      {cutaway ? (
+    <g transform={`translate(${x} ${y + bob}) scale(${scale * dir} ${scale})`}>
+      {/* Ground Shadow */}
+      <ellipse cx={0} cy={175} rx={58} ry={14} fill="#000000" opacity={0.28} />
+      {/* Stick Legs */}
+      <line x1={-18} y1={105} x2={-22} y2={170} stroke={INK} strokeWidth={7} strokeLinecap="round" />
+      <line x1={18} y1={105} x2={22} y2={170} stroke={INK} strokeWidth={7} strokeLinecap="round" />
+      {/* Torso */}
+      <rect x={-46} y={-22} width={92} height={132} rx={44} fill={bodyColor} stroke={INK} strokeWidth={5} />
+      {variant === "suit" || variant === "ceo" ? (
+        <polygon points="-14,-20 14,-20 6,42 -6,42" fill="#E11D48" stroke={INK} strokeWidth={3} />
+      ) : null}
+
+      {/* Stick Arms by Pose */}
+      {pose === "point_right" ? (
         <>
-          <MatteCylinder pos={[0, 0, 0]} radiusTop={radius} radiusBottom={radius} height={height * 0.9} thetaStart={0.5} thetaLength={Math.PI * 1.35} doubleSide={true} color={color} edgeColor={accentHex} />
-          <GlassShell pos={[0, 0, 0]} shape="cylinder" radius={radius * 0.96} height={height * 0.88} color={accentHex} edgeColor={accentHex} opacity={0.18} />
+          <line x1={-44} y1={18} x2={-78} y2={62} stroke={INK} strokeWidth={6} strokeLinecap="round" />
+          <line x1={44} y1={16} x2={115} y2={-6 + wave * 0.5} stroke={INK} strokeWidth={6} strokeLinecap="round" />
+        </>
+      ) : pose === "point_up" || pose === "hold_up" ? (
+        <>
+          <line x1={-44} y1={18} x2={-72} y2={-68 + wave * 0.4} stroke={INK} strokeWidth={6} strokeLinecap="round" />
+          <line x1={44} y1={18} x2={72} y2={-68 + wave * 0.4} stroke={INK} strokeWidth={6} strokeLinecap="round" />
+        </>
+      ) : pose === "hands_head" ? (
+        <>
+          <path d="M -44 16 Q -90 -30 -56 -80" fill="none" stroke={INK} strokeWidth={6} strokeLinecap="round" />
+          <path d="M 44 16 Q 90 -30 56 -80" fill="none" stroke={INK} strokeWidth={6} strokeLinecap="round" />
+        </>
+      ) : pose === "celebrate" ? (
+        <>
+          <line x1={-44} y1={18} x2={-86} y2={-52 + wave} stroke={INK} strokeWidth={6} strokeLinecap="round" />
+          <line x1={44} y1={18} x2={86} y2={-52 - wave} stroke={INK} strokeWidth={6} strokeLinecap="round" />
         </>
       ) : (
-        <MatteCylinder pos={[0, 0, 0]} radiusTop={radius} radiusBottom={radius} height={height * 0.9} color={color} edgeColor={accentHex} />
+        <>
+          <line x1={-44} y1={18} x2={-72} y2={68 + wave * 0.3} stroke={INK} strokeWidth={6} strokeLinecap="round" />
+          <line x1={44} y1={18} x2={72} y2={68 - wave * 0.3} stroke={INK} strokeWidth={6} strokeLinecap="round" />
+        </>
       )}
-      <MatteCylinder pos={[0, 0, 0]} radiusTop={radius * 0.45} radiusBottom={radius * 0.45} height={height * 0.78} color={accentHex} emissive={accentHex} emissiveIntensity={pulse} edges={false} />
-      {Array.from({ length: safeFins }).map((_, fi) => {
-        const a = (fi / safeFins) * Math.PI * 2;
-        if (cutaway && a > 4.6 && a < 6.1) return null;
-        return (
-          <MatteBox
-            key={fi}
-            pos={[Math.cos(a) * radius * 1.02, 0, Math.sin(a) * radius * 1.02]}
-            rot={[0, -a, 0]}
-            size={[0.24, height * 0.82, 0.05]}
-            color="#475569"
-            edgeColor="#94A3B8"
-          />
-        );
-      })}
-    </group>
+
+      {/* Oval Cartoon Head */}
+      <circle cx={0} cy={-78} r={54} fill={skinColor} stroke={INK} strokeWidth={5} />
+      {/* Hair */}
+      <path d="M -52 -88 Q -42 -142 0 -138 Q 42 -142 52 -88 Q 22 -106 0 -100 Q -22 -106 -52 -88 Z" fill={hairColor} stroke={INK} strokeWidth={4} />
+
+      {/* Hard Hat */}
+      {hardHat && (
+        <g>
+          <path d="M -54 -96 Q -48 -150 0 -150 Q 48 -150 54 -96 Z" fill="#FACC15" stroke={INK} strokeWidth={5} />
+          <rect x={-64} y={-98} width={128} height={14} rx={7} fill="#EAB308" stroke={INK} strokeWidth={4} />
+        </g>
+      )}
+
+      {/* Eyes (with automatic blink) */}
+      {blink ? (
+        <>
+          <line x1={-24} y1={-80} x2={-10} y2={-80} stroke={INK} strokeWidth={4} strokeLinecap="round" />
+          <line x1={10} y1={-80} x2={24} y2={-80} stroke={INK} strokeWidth={4} strokeLinecap="round" />
+        </>
+      ) : (
+        <>
+          <circle cx={-16} cy={-80} r={mood === "shocked" ? 8 : 5.5} fill={INK} />
+          <circle cx={16} cy={-80} r={mood === "shocked" ? 8 : 5.5} fill={INK} />
+        </>
+      )}
+
+      {/* Glasses */}
+      {glasses && (
+        <g>
+          <rect x={-32} y={-92} width={28} height={22} rx={5} fill="none" stroke={INK} strokeWidth={3.5} />
+          <rect x={4} y={-92} width={28} height={22} rx={5} fill="none" stroke={INK} strokeWidth={3.5} />
+          <line x1={-4} y1={-81} x2={4} y2={-81} stroke={INK} strokeWidth={3.5} />
+        </g>
+      )}
+
+      {/* Eyebrows + Mouth by Mood */}
+      {mood === "shocked" ? (
+        <ellipse cx={0} cy={-50} rx={11} ry={14} fill="#7F1D1D" stroke={INK} strokeWidth={3.5} />
+      ) : mood === "worried" || mood === "angry" ? (
+        <>
+          <line x1={-28} y1={-96} x2={-8} y2={-91} stroke={INK} strokeWidth={4} strokeLinecap="round" />
+          <line x1={8} y1={-91} x2={28} y2={-96} stroke={INK} strokeWidth={4} strokeLinecap="round" />
+          <path d="M -16 -46 Q 0 -60 16 -46" fill="none" stroke={INK} strokeWidth={4.5} strokeLinecap="round" />
+        </>
+      ) : mood === "happy" || mood === "smug" ? (
+        <path d="M -18 -56 Q 0 -38 18 -56" fill="#FFFFFF" stroke={INK} strokeWidth={4} strokeLinecap="round" />
+      ) : (
+        <line x1={-14} y1={-52} x2={14} y2={-52} stroke={INK} strokeWidth={4.5} strokeLinecap="round" />
+      )}
+
+      {/* Animated Sweat Drop */}
+      {sweatDrop && (
+        <path
+          d={`M ${-48} ${-108 + sweatY} Q ${-56} ${-92 + sweatY} ${-48} ${-86 + sweatY} Q ${-40} ${-92 + sweatY} ${-48} ${-108 + sweatY} Z`}
+          fill="#38BDF8"
+          stroke={INK}
+          strokeWidth={2.5}
+          opacity={1 - sweatY / 38}
+        />
+      )}
+    </g>
   );
 };
 
-export const PipeConduit: React.FC<{
-  points: V3[];
-  tubeRadius?: number;
-  pipeColor?: string;
-  fluidColor?: string;
-  flangeCount?: number;
-  count?: number;
-  speed?: number;
-  frame: number;
-}> = ({
-  points,
-  tubeRadius = 0.11,
-  pipeColor = "#475569",
-  fluidColor = "#22D3EE",
-  flangeCount = 4,
-  count = 6,
-  speed = 0.75,
-  frame,
-}) => {
-  const safePts = useMemo(() => {
-    const valid = Array.isArray(points) && points.length >= 2 ? points : [[-2, 0, 0] as V3, [2, 0, 0] as V3];
-    return valid.map((p) => {
-      const sv = safeVec(p);
-      return new THREE.Vector3(sv[0], sv[1], sv[2]);
-    });
-  }, [points]);
-
-  const curve = useMemo(() => new THREE.CatmullRomCurve3(safePts), [safePts]);
-
-  const flanges = useMemo(() => {
-    const fCount = Math.max(2, Math.min(8, Math.round(flangeCount)));
-    const up = new THREE.Vector3(0, 1, 0);
-    return Array.from({ length: fCount }).map((_, idx) => {
-      const u = (idx + 0.5) / fCount;
-      const pt = curve.getPoint(u);
-      const tangent = curve.getTangent(u).normalize();
-      const quat = new THREE.Quaternion().setFromUnitVectors(up, tangent);
-      const euler = new THREE.Euler().setFromQuaternion(quat);
-      return {
-        pos: [pt.x, pt.y, pt.z] as V3,
-        rot: [euler.x, euler.y, euler.z] as V3,
-      };
-    });
-  }, [curve, flangeCount]);
-
-  const t = (frame / 30) * speed;
-  const safeCount = Math.max(2, Math.min(18, Math.round(count)));
-
-  return (
-    <group>
-      <mesh>
-        <tubeGeometry args={[curve, 40, tubeRadius, 12, false]} />
-        <meshStandardMaterial color={safeHex(pipeColor)} transparent opacity={0.34} roughness={0.22} metalness={0.4} depthWrite={false} />
-      </mesh>
-      <mesh>
-        <tubeGeometry args={[curve, 40, tubeRadius * 0.28, 8, false]} />
-        <meshStandardMaterial color={safeHex(fluidColor)} emissive={safeHex(fluidColor)} emissiveIntensity={0.65} />
-      </mesh>
-      {flanges.map((fl, fi) => (
-        <MatteCylinder key={fi} pos={fl.pos} rot={fl.rot} radiusTop={tubeRadius * 1.45} radiusBottom={tubeRadius * 1.45} height={0.07} color="#64748B" edgeColor={fluidColor} />
-      ))}
-      {Array.from({ length: safeCount }).map((_, idx) => {
-        const u = ((t + idx / safeCount) % 1 + 1) % 1;
-        const pt = curve.getPoint(u);
-        return (
-          <mesh key={idx} position={[pt.x, pt.y, pt.z]}>
-            <sphereGeometry args={[tubeRadius * 0.68, 10, 10]} />
-            <meshStandardMaterial color={safeHex(fluidColor)} emissive={safeHex(fluidColor)} emissiveIntensity={2.1} />
-          </mesh>
-        );
-      })}
-    </group>
-  );
-};
-
-export const HeatSinkArray: React.FC<{
-  pos?: V3;
-  rot?: V3;
-  size?: V3;
-  finCount?: number;
-  color?: string;
-  pipeColor?: string;
-  glowColor?: string;
-}> = ({
-  pos,
-  rot,
-  size = [1.8, 0.7, 1.4],
-  finCount = 8,
-  color = "#64748B",
-  pipeColor = "#D97706",
-  glowColor = "#22D3EE",
-}) => {
-  const [w, h, d] = safeVec(size, [1.8, 0.7, 1.4]);
-  const safeFins = Math.max(4, Math.min(14, Math.round(finCount)));
-  const step = w / safeFins;
-
-  return (
-    <group position={safeVec(pos)} rotation={safeVec(rot)}>
-      <MatteBox pos={[0, -h * 0.36, 0]} size={[w, h * 0.24, d]} color={pipeColor} edgeColor="#FBBF24" />
-      {Array.from({ length: safeFins }).map((_, fi) => {
-        const fx = -w * 0.45 + fi * step;
-        return (
-          <MatteBox key={fi} pos={[fx, h * 0.08, 0]} size={[step * 0.35, h * 0.72, d * 0.94]} color={color} edgeColor={glowColor} />
-        );
-      })}
-      {[-d * 0.25, d * 0.25].map((pz, pi) => (
-        <MatteCylinder key={pi} pos={[0, h * 0.04, pz]} rot={[0, 0, Math.PI / 2]} radiusTop={0.07} radiusBottom={0.07} height={w * 1.12} color={pipeColor} edgeColor="#FDE68A" />
-      ))}
-    </group>
-  );
-};
-
-export const SpinGroup: React.FC<{
-  pos?: V3;
-  rot?: V3;
-  axis?: "x" | "y" | "z";
-  speed?: number;
-  frame: number;
-  children?: React.ReactNode;
-}> = ({ pos, rot, axis = "y", speed = 1, frame, children }) => {
-  const base = safeVec(rot);
-  const delta = (frame / 30) * speed;
-  const finalRot: V3 = [
-    base[0] + (axis === "x" ? delta : 0),
-    base[1] + (axis === "y" ? delta : 0),
-    base[2] + (axis === "z" ? delta : 0),
-  ];
-  return (
-    <group position={safeVec(pos)} rotation={finalRot}>
-      {children}
-    </group>
-  );
-};
-
-export const BobGroup: React.FC<{
-  pos?: V3;
-  rot?: V3;
-  axis?: "x" | "y" | "z";
-  amp?: number;
-  speed?: number;
-  phase?: number;
-  frame: number;
-  children?: React.ReactNode;
-}> = ({ pos, rot, axis = "y", amp = 0.15, speed = 1.5, phase = 0, frame, children }) => {
-  const base = safeVec(pos);
-  const delta = Math.sin((frame / 30) * speed + phase) * amp;
-  const finalPos: V3 = [
-    base[0] + (axis === "x" ? delta : 0),
-    base[1] + (axis === "y" ? delta : 0),
-    base[2] + (axis === "z" ? delta : 0),
-  ];
-  return (
-    <group position={finalPos} rotation={safeVec(rot)}>
-      {children}
-    </group>
-  );
-};
-
-export const RevealSlideGroup: React.FC<{
-  startPos?: V3;
-  endPos?: V3;
-  startScale?: number;
-  endScale?: number;
+export const TitleCard2D: React.FC<{
+  text: string;
   progress: number;
-  startAt?: number;
-  endAt?: number;
-  children?: React.ReactNode;
+  accentHex?: string;
+}> = ({ text, progress, accentHex = "#22C55E" }) => {
+  const words = text.split(" ");
+  const shownCount = Math.max(1, Math.ceil(Math.min(1, progress * 1.65) * words.length));
+  const shownText = words.slice(0, shownCount).join(" ");
+  const s = 0.94 + Math.min(1, progress * 2.5) * 0.06;
+
+  return (
+    <g transform={`translate(960 540) scale(${s}) translate(-960 -540)`}>
+      <text
+        x={960}
+        y={555}
+        textAnchor="middle"
+        fill="#FFFFFF"
+        fontFamily={HAND_FONT}
+        fontSize={106}
+        fontWeight={700}
+      >
+        {shownText}
+      </text>
+      <line
+        x1={720}
+        y1={592}
+        x2={720 + 480 * Math.min(1, progress * 1.5)}
+        y2={592}
+        stroke={accentHex}
+        strokeWidth={7}
+        strokeLinecap="round"
+      />
+    </g>
+  );
+};
+
+export const InkCallout2D: React.FC<{
+  x: number;
+  y: number;
+  text: string;
+  color?: string;
+  fontSize?: number;
+  delaySec?: number;
+  localTime: number;
+  rotateDeg?: number;
+  arrowTo?: [number, number];
 }> = ({
-  startPos = [0, 0, 0],
-  endPos = [0, 1.5, 0],
-  startScale = 1,
-  endScale = 1,
+  x,
+  y,
+  text,
+  color = "#FFFFFF",
+  fontSize = 68,
+  delaySec = 0,
+  localTime,
+  rotateDeg = -3,
+  arrowTo,
+}) => {
+  const { fps } = useVideoConfig();
+  const f = Math.max(0, Math.round((localTime - delaySec) * fps));
+  const pop = spring({ frame: f, fps, config: { damping: 14, stiffness: 180, mass: 0.75 } });
+  if (localTime < delaySec) return null;
+
+  return (
+    <g>
+      {arrowTo && (
+        <line
+          x1={x}
+          y1={y + 18}
+          x2={x + (arrowTo[0] - x) * pop}
+          y2={y + 18 + (arrowTo[1] - (y + 18)) * pop}
+          stroke={color}
+          strokeWidth={6}
+          strokeDasharray="12 10"
+          strokeLinecap="round"
+        />
+      )}
+      <g transform={`translate(${x} ${y}) rotate(${rotateDeg}) scale(${0.5 + 0.5 * pop})`}>
+        <text
+          x={0}
+          y={0}
+          textAnchor="middle"
+          fill={INK}
+          stroke={INK}
+          strokeWidth={12}
+          strokeLinejoin="round"
+          fontFamily={MARKER_FONT}
+          fontSize={fontSize}
+        >
+          {text}
+        </text>
+        <text
+          x={0}
+          y={0}
+          textAnchor="middle"
+          fill={color}
+          fontFamily={MARKER_FONT}
+          fontSize={fontSize}
+        >
+          {text}
+        </text>
+      </g>
+    </g>
+  );
+};
+
+export const LineChart2D: React.FC<{
+  x: number;
+  y: number;
+  w?: number;
+  h?: number;
+  label?: string;
+  startVal?: number;
+  endVal?: number;
+  prefix?: string;
+  suffix?: string;
+  decimals?: number;
+  color?: string;
+  points?: number[];
+  progress: number;
+}> = ({
+  x,
+  y,
+  w = 1000,
+  h = 460,
+  label = "METRIC",
+  startVal = 0,
+  endVal = 100,
+  prefix = "",
+  suffix = "",
+  decimals = 0,
+  color = "#EF4444",
+  points = [0.15, 0.22, 0.34, 0.42, 0.65, 0.85, 0.96],
   progress,
-  startAt = 0.15,
-  endAt = 0.65,
-  children,
 }) => {
-  const span = Math.max(0.01, endAt - startAt);
-  const raw = Math.max(0, Math.min(1, (progress - startAt) / span));
-  const t = raw * raw * (3 - 2 * raw);
-  const s = safeVec(startPos);
-  const e = safeVec(endPos, [0, 1.5, 0]);
-  const sc = startScale + (endScale - startScale) * t;
-  return (
-    <group
-      position={[s[0] + (e[0] - s[0]) * t, s[1] + (e[1] - s[1]) * t, s[2] + (e[2] - s[2]) * t]}
-      scale={[sc, sc, sc]}
-    >
-      {children}
-    </group>
-  );
-};
-
-export const FlowStream: React.FC<{
-  points: V3[];
-  tubeRadius?: number;
-  tubeColor?: string;
-  particleColor?: string;
-  particleSize?: number;
-  count?: number;
-  speed?: number;
-  frame: number;
-}> = ({
-  points,
-  tubeRadius = 0.08,
-  tubeColor = "#3B4E6B",
-  particleColor = "#22D3EE",
-  particleSize = 0.09,
-  count = 6,
-  speed = 0.7,
-  frame,
-}) => (
-  <PipeConduit
-    points={points}
-    tubeRadius={Math.max(tubeRadius, particleSize * 1.15)}
-    pipeColor={tubeColor}
-    fluidColor={particleColor}
-    flangeCount={3}
-    count={count}
-    speed={speed}
-    frame={frame}
-  />
-);
-
-export const RisingParticles: React.FC<{
-  origin?: V3;
-  spread?: number;
-  height?: number;
-  count?: number;
-  size?: number;
-  color?: string;
-  speed?: number;
-  frame: number;
-}> = ({
-  origin = [0, 0, 0],
-  spread = 0.75,
-  height = 2.0,
-  count = 8,
-  size = 0.1,
-  color = "#F97316",
-  speed = 0.45,
-  frame,
-}) => {
-  const o = safeVec(origin);
-  const t = (frame / 30) * speed;
-  const safeCount = Math.max(1, Math.min(16, Math.round(count)));
-
-  return (
-    <group>
-      {Array.from({ length: safeCount }).map((_, i) => {
-        const life = ((t + i / safeCount) % 1 + 1) % 1;
-        const angle = i * 2.3 + t * 0.8;
-        const r = 0.12 + life * spread;
-        const s = Math.max(0.25, 1.0 - life * 0.65);
-        return (
-          <mesh
-            key={i}
-            position={[o[0] + Math.cos(angle) * r, o[1] + life * height, o[2] + Math.sin(angle) * r]}
-            scale={[s, s, s]}
-          >
-            <sphereGeometry args={[size, 10, 10]} />
-            <meshStandardMaterial
-              color={safeHex(color)}
-              emissive={safeHex(color)}
-              emissiveIntensity={1.6 * (1 - life * 0.5)}
-            />
-          </mesh>
-        );
-      })}
-    </group>
-  );
-};
-
-export const OrbitRing: React.FC<{
-  center?: V3;
-  radius?: number;
-  count?: number;
-  size?: number;
-  color?: string;
-  speed?: number;
-  tilt?: V3;
-  frame: number;
-}> = ({
-  center = [0, 0, 0],
-  radius = 1.6,
-  count = 8,
-  size = 0.09,
-  color = "#22D3EE",
-  speed = 0.8,
-  tilt = [0, 0, 0],
-  frame,
-}) => {
-  const t = (frame / 30) * speed;
-  const safeCount = Math.max(1, Math.min(18, Math.round(count)));
-  return (
-    <group position={safeVec(center)} rotation={safeVec(tilt)}>
-      <MatteTorus pos={[0, 0, 0]} rot={[Math.PI / 2, 0, 0]} radius={radius} tube={0.03} color="#475569" />
-      {Array.from({ length: safeCount }).map((_, i) => {
-        const a = t + (i / safeCount) * Math.PI * 2;
-        return (
-          <mesh key={i} position={[Math.cos(a) * radius, 0, Math.sin(a) * radius]}>
-            <sphereGeometry args={[size, 10, 10]} />
-            <meshStandardMaterial color={safeHex(color)} emissive={safeHex(color)} emissiveIntensity={1.9} />
-          </mesh>
-        );
-      })}
-    </group>
-  );
-};
-
-class GlbErrorBoundary extends Component<{ children: React.ReactNode }, { err: boolean }> {
-  constructor(props: { children: React.ReactNode }) {
-    super(props);
-    this.state = { err: false };
-  }
-  static getDerivedStateFromError() {
-    return { err: true };
-  }
-  render() {
-    return this.state.err ? null : this.props.children;
-  }
-}
-
-const GlbInner: React.FC<{ file: string; pos?: V3; rot?: V3; scale?: number; spinSpeed?: number; frame: number }> = ({
-  file,
-  pos,
-  rot,
-  scale = 1,
-  spinSpeed = 0.35,
-  frame,
-}) => {
-  const { scene } = useGLTF(staticFile(`models/${file}`));
-  const cloned = useMemo(() => scene.clone(), [scene]);
-  const r = safeVec(rot);
-  return (
-    <group position={safeVec(pos)} rotation={[r[0], r[1] + (frame / 30) * spinSpeed, r[2]]} scale={[scale, scale, scale]}>
-      <primitive object={cloned} />
-    </group>
-  );
-};
-
-export const GlbModel: React.FC<{
-  file: string;
-  pos?: V3;
-  rot?: V3;
-  scale?: number;
-  spinSpeed?: number;
-  frame: number;
-}> = (props) => (
-  <GlbErrorBoundary>
-    <Suspense fallback={null}>
-      <GlbInner {...props} />
-    </Suspense>
-  </GlbErrorBoundary>
-);
-'''
-
-FILES["src/components/Continuous3DWorld.tsx"] = r'''
-import React, { useLayoutEffect, useMemo } from "react";
-import { ThreeCanvas } from "@remotion/three";
-import { useThree } from "@react-three/fiber";
-import { interpolateColors, useCurrentFrame, useVideoConfig } from "remotion";
-import { SCENE_REGISTRY } from "../generated/SceneRegistry";
-import type { DocumentaryPlan, DocumentaryScene } from "../types";
-
-function smoothstep(edge0: number, edge1: number, x: number): number {
-  const t = Math.max(0, Math.min(1, (x - edge0) / Math.max(1e-6, edge1 - edge0)));
-  return t * t * (3 - 2 * t);
-}
-
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
-
-function sampleSceneCamera(
-  scene: DocumentaryScene,
-  tSec: number,
-  frame: number,
-  isVertical: boolean
-): { pos: [number, number, number]; look: [number, number, number] } {
-  const beats = scene.beats;
-  if (!beats || beats.length === 0) {
-    return {
-      pos: [scene.worldPos[0] + 3.8, scene.worldPos[1] + 2.0, scene.worldPos[2] + 4.3],
-      look: [scene.worldPos[0], scene.worldPos[1] + 0.3, scene.worldPos[2]],
-    };
-  }
-
-  let bIdx = beats.findIndex((b) => tSec >= b.startSec && tSec <= b.endSec);
-  if (bIdx === -1) bIdx = beats.length - 1;
-
-  const currBeat = beats[bIdx];
-  const nextBeat = beats[Math.min(beats.length - 1, bIdx + 1)];
-  const bDur = Math.max(0.1, currBeat.endSec - currBeat.startSec);
-  const localU = Math.max(0, Math.min(1, (tSec - currBeat.startSec) / bDur));
-  const glideU = smoothstep(0.15, 0.95, localU);
-
-  const driftX = Math.sin(frame * 0.02) * 0.11;
-  const driftY = Math.cos(frame * 0.016) * 0.07;
-  const pull = isVertical ? 1.15 : 1.0;
-
-  return {
-    pos: [
-      scene.worldPos[0] + lerp(currBeat.cameraOffset[0], nextBeat.cameraOffset[0], glideU) * pull + driftX,
-      scene.worldPos[1] + lerp(currBeat.cameraOffset[1], nextBeat.cameraOffset[1], glideU) + driftY,
-      scene.worldPos[2] + lerp(currBeat.cameraOffset[2], nextBeat.cameraOffset[2], glideU) * pull,
-    ],
-    look: [
-      scene.worldPos[0] + lerp(currBeat.lookOffset[0], nextBeat.lookOffset[0], glideU),
-      scene.worldPos[1] + lerp(currBeat.lookOffset[1], nextBeat.lookOffset[1], glideU),
-      scene.worldPos[2] + lerp(currBeat.lookOffset[2], nextBeat.lookOffset[2], glideU),
-    ],
-  };
-}
-
-interface CameraState {
-  camPos: [number, number, number];
-  lookAt: [number, number, number];
-  bgHex: string;
-  accentHex: string;
-}
-
-function computeContinuousCamera(
-  plan: DocumentaryPlan,
-  tSec: number,
-  frame: number,
-  isVertical: boolean
-): CameraState {
-  const scenes = plan.scenes;
-  if (scenes.length === 0) {
-    return { camPos: [0, 2, 5], lookAt: [0, 0.25, 0], bgHex: "#101B2E", accentHex: "#22D3EE" };
-  }
-
-  let activeIdx = scenes.findIndex((s) => tSec >= s.startSec && tSec <= s.endSec);
-  if (activeIdx === -1) activeIdx = scenes.length - 1;
-
-  const current = scenes[activeIdx];
-  const currSample = sampleSceneCamera(current, tSec, frame, isVertical);
-  const halfWin = isVertical ? 0.75 : 0.9;
-
-  if (activeIdx < scenes.length - 1) {
-    const distToEnd = current.endSec - tSec;
-    if (distToEnd <= halfWin) {
-      const next = scenes[activeIdx + 1];
-      const nextSample = sampleSceneCamera(next, tSec, frame, isVertical);
-      const blend = smoothstep(0, 1, (halfWin - distToEnd) / (halfWin * 2));
-      return {
-        camPos: [
-          lerp(currSample.pos[0], nextSample.pos[0], blend),
-          lerp(currSample.pos[1], nextSample.pos[1], blend),
-          lerp(currSample.pos[2], nextSample.pos[2], blend),
-        ],
-        lookAt: [
-          lerp(currSample.look[0], nextSample.look[0], blend),
-          lerp(currSample.look[1], nextSample.look[1], blend),
-          lerp(currSample.look[2], nextSample.look[2], blend),
-        ],
-        bgHex: interpolateColors(blend, [0, 1], [current.bgHex, next.bgHex]),
-        accentHex: interpolateColors(blend, [0, 1], [current.accentHex, next.accentHex]),
-      };
-    }
-  }
-
-  if (activeIdx > 0) {
-    const distFromStart = tSec - current.startSec;
-    if (distFromStart < halfWin) {
-      const prev = scenes[activeIdx - 1];
-      const prevSample = sampleSceneCamera(prev, tSec, frame, isVertical);
-      const blend = smoothstep(0, 1, 0.5 + distFromStart / (halfWin * 2));
-      return {
-        camPos: [
-          lerp(prevSample.pos[0], currSample.pos[0], blend),
-          lerp(prevSample.pos[1], currSample.pos[1], blend),
-          lerp(prevSample.pos[2], currSample.pos[2], blend),
-        ],
-        lookAt: [
-          lerp(prevSample.look[0], currSample.look[0], blend),
-          lerp(prevSample.look[1], currSample.look[1], blend),
-          lerp(prevSample.look[2], currSample.look[2], blend),
-        ],
-        bgHex: interpolateColors(blend, [0, 1], [prev.bgHex, current.bgHex]),
-        accentHex: interpolateColors(blend, [0, 1], [prev.accentHex, current.accentHex]),
-      };
-    }
-  }
-
-  return {
-    camPos: currSample.pos,
-    lookAt: currSample.look,
-    bgHex: current.bgHex,
-    accentHex: current.accentHex,
-  };
-}
-
-const CameraController: React.FC<{ camPos: [number, number, number]; lookAt: [number, number, number] }> = ({
-  camPos,
-  lookAt,
-}) => {
-  const camera = useThree((state) => state.camera);
-  camera.position.set(camPos[0], camPos[1], camPos[2]);
-  camera.lookAt(lookAt[0], lookAt[1], lookAt[2]);
-  camera.updateMatrixWorld();
-
-  useLayoutEffect(() => {
-    camera.position.set(camPos[0], camPos[1], camPos[2]);
-    camera.lookAt(lookAt[0], lookAt[1], lookAt[2]);
-    camera.updateMatrixWorld();
-  }, [camera, camPos, lookAt]);
-
-  return null;
-};
-
-export const Continuous3DWorld: React.FC<{ plan: DocumentaryPlan }> = ({ plan }) => {
-  const frame = useCurrentFrame();
-  const { width, height, fps } = useVideoConfig();
-  const tSec = frame / fps;
-  const isVertical = height > width;
-
-  const camState = computeContinuousCamera(plan, tSec, frame, isVertical);
-  const visibleScenes = plan.scenes.filter(
-    (s) => tSec >= s.startSec - 2.2 && tSec <= s.endSec + 2.2
-  );
-
-  // World-locked blueprint grid snapping every 1.0 unit so floor lines never slide during camera flight
-  const gridX = Math.round(camState.lookAt[0]);
-  const gridY = Math.round(camState.lookAt[1] - 1.35);
-  const gridZ = Math.round(camState.lookAt[2]);
-
-  return (
-    <ThreeCanvas
-      width={width}
-      height={height}
-      camera={{ fov: isVertical ? 50 : 38, near: 0.1, far: 45, position: camState.camPos }}
-      gl={{ antialias: true, powerPreference: "high-performance" }}
-    >
-      <color attach="background" args={[camState.bgHex]} />
-      <fog attach="fog" args={[camState.bgHex, 9.0, 20.5]} />
-
-      <CameraController camPos={camState.camPos} lookAt={camState.lookAt} />
-
-      {/* Grounded Technical CAD Blueprint Floor Grid */}
-      <gridHelper args={[56, 56, "#1E4B68", "#1C2D46"]} position={[gridX, gridY, gridZ]} />
-
-      {/* 3-Point Studio + Hemisphere Lighting */}
-      <hemisphereLight args={["#E2E8F0", "#263750", 1.25]} />
-      <directionalLight
-        position={[camState.camPos[0] + 8, camState.camPos[1] + 12, camState.camPos[2] + 7]}
-        intensity={2.2}
-        color="#FFFFFF"
-      />
-      <directionalLight
-        position={[camState.camPos[0] - 9, camState.camPos[1] + 5, camState.camPos[2] - 8]}
-        intensity={1.5}
-        color="#7DD3FC"
-      />
-      <pointLight
-        position={[camState.lookAt[0] - 3.5, camState.lookAt[1] + 3, camState.lookAt[2] + 3]}
-        intensity={1.7}
-        color={camState.accentHex}
-      />
-
-      {visibleScenes.map((scene) => {
-        const Comp = SCENE_REGISTRY[scene.id];
-        if (!Comp) return null;
-        const dur = Math.max(0.1, scene.endSec - scene.startSec);
-        const progress = Math.max(0, Math.min(1, (tSec - scene.startSec) / dur));
-        const localFrame = Math.max(0, frame - Math.round(scene.startSec * fps));
-        return (
-          <group key={scene.id} position={scene.worldPos}>
-            <Comp
-              frame={frame}
-              localFrame={localFrame}
-              progress={progress}
-              accentHex={scene.accentHex}
-            />
-          </group>
-        );
-      })}
-    </ThreeCanvas>
-  );
-};
-'''
-
-FILES["src/components/HudOverlay.tsx"] = r'''
-import React from "react";
-import { loadFont as loadSpaceGrotesk } from "@remotion/google-fonts/SpaceGrotesk";
-import { loadFont as loadJetBrainsMono } from "@remotion/google-fonts/JetBrainsMono";
-import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
-import type { DocumentaryPlan, HudCallout, StatCounter, SubtitleChunk } from "../types";
-
-const { fontFamily: DISPLAY_FONT } = loadSpaceGrotesk("normal", {
-  weights: ["700"],
-  subsets: ["latin"],
-});
-
-const { fontFamily: MONO_FONT } = loadJetBrainsMono("normal", {
-  weights: ["600", "700"],
-  subsets: ["latin"],
-});
-
-function formatCounterValue(val: number, decimals = 0, prefix = "", suffix = ""): string {
-  const fixed = decimals > 0 ? Number(val.toFixed(decimals)) : Math.round(val);
-  const formatted = fixed.toLocaleString("en-US", {
+  const drawProg = Math.min(1, progress * 1.4);
+  const pathPts = points.map((p, idx) => {
+    const px = x + (idx / Math.max(1, points.length - 1)) * w;
+    const py = y + h - p * h * 0.82 - 30;
+    return `${idx === 0 ? "M" : "L"} ${px.toFixed(1)} ${py.toFixed(1)}`;
+  });
+  const d = pathPts.join(" ");
+  const totalLen = w * 1.6;
+  const val = startVal + (endVal - startVal) * drawProg;
+  const formatted = `${prefix}${Number(val.toFixed(decimals)).toLocaleString("en-US", {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
-  });
-  return `${prefix}${formatted}${suffix}`;
-}
-
-const CalloutLayer: React.FC<{
-  callouts: HudCallout[];
-  accentHex: string;
-  localBeatFrame: number;
-  beatDurFrames: number;
-  isFirstBeat: boolean;
-  fps: number;
-  width: number;
-  height: number;
-}> = ({ callouts, accentHex, localBeatFrame, beatDurFrames, isFirstBeat, fps, width, height }) => {
-  const enter = spring({
-    frame: localBeatFrame + (isFirstBeat ? 10 : 0),
-    fps,
-    config: { damping: 18, stiffness: 170, mass: 0.8 },
-  });
-  const exitOpacity = interpolate(
-    localBeatFrame,
-    [Math.max(0, beatDurFrames - 10), beatDurFrames],
-    [1, 0],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
-  );
+  })}${suffix}`;
 
   return (
-    <AbsoluteFill style={{ pointerEvents: "none", opacity: exitOpacity }}>
-      <svg width={width} height={height} style={{ position: "absolute", inset: 0 }}>
-        {callouts.map((c, idx) => {
-          const ax = (c.anchorPct[0] / 100) * width;
-          const ay = (c.anchorPct[1] / 100) * height;
-          const bx = (c.boxPct[0] / 100) * width;
-          const by = (c.boxPct[1] / 100) * height;
-          const ex = bx + (ax - bx) * 0.45;
-          const ey = by;
-          const pathLen = Math.hypot(ex - bx, ey - by) + Math.hypot(ax - ex, ay - ey);
-          const dashOffset = pathLen * (1 - enter);
+    <g>
+      <rect x={x - 30} y={y - 30} width={w + 60} height={h + 80} rx={16} fill="#FFFFFF" fillOpacity={0.78} stroke={INK} strokeWidth={5} />
+      <line x1={x} y1={y + h} x2={x + w} y2={y + h} stroke={INK} strokeWidth={5} />
+      <line x1={x} y1={y} x2={x} y2={y + h} stroke={INK} strokeWidth={5} />
+      <path
+        d={d}
+        fill="none"
+        stroke={color}
+        strokeWidth={11}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeDasharray={totalLen}
+        strokeDashoffset={totalLen * (1 - drawProg)}
+      />
+      <text x={x + 24} y={y + 42} fill={INK} fontFamily={UI_FONT} fontSize={32} fontWeight={700}>
+        {label}
+      </text>
+      <text x={x + w - 20} y={y + 62} textAnchor="end" fill={color} fontFamily={MARKER_FONT} fontSize={62}>
+        {formatted}
+      </text>
+    </g>
+  );
+};
 
-          return (
-            <g key={idx}>
-              <path
-                d={`M ${bx} ${by} L ${ex} ${ey} L ${ax} ${ay}`}
-                fill="none"
-                stroke={accentHex}
-                strokeWidth={2.5}
-                strokeDasharray={pathLen}
-                strokeDashoffset={dashOffset}
-                strokeLinecap="round"
-              />
-              <circle cx={ax} cy={ay} r={6 * enter} fill={accentHex} />
-              <circle cx={ax} cy={ay} r={14 * enter} fill="none" stroke={accentHex} strokeWidth={1.5} opacity={0.55} />
-            </g>
-          );
-        })}
-      </svg>
+export const BarChart2D: React.FC<{
+  x: number;
+  y: number;
+  w?: number;
+  h?: number;
+  bars: { label: string; value: number; color?: string }[];
+  multiplierTag?: string;
+  suffix?: string;
+  prefix?: string;
+  progress: number;
+}> = ({ x, y, w = 900, h = 480, bars, multiplierTag, prefix = "", suffix = "", progress }) => {
+  const maxVal = Math.max(1, ...bars.map((b) => b.value));
+  const barW = Math.min(180, (w / Math.max(1, bars.length)) * 0.56);
+  const gap = w / Math.max(1, bars.length);
+  const grow = Math.min(1, progress * 1.5);
 
-      {callouts.map((c, idx) => {
-        const bx = (c.boxPct[0] / 100) * width;
-        const by = (c.boxPct[1] / 100) * height;
-        const alignRight = c.boxPct[0] > 55;
+  return (
+    <g>
+      <line x1={x} y1={y + h} x2={x + w} y2={y + h} stroke={INK} strokeWidth={6} />
+      {bars.map((b, idx) => {
+        const bh = Math.max(20, (b.value / maxVal) * (h - 90) * grow);
+        const bx = x + idx * gap + (gap - barW) * 0.5;
+        const by = y + h - bh;
+        const col = b.color || (idx === bars.length - 1 ? "#22C55E" : "#94A3B8");
+        const num = Math.round(b.value * grow);
         return (
-          <div
-            key={idx}
-            style={{
-              position: "absolute",
-              left: alignRight ? undefined : bx,
-              right: alignRight ? width - bx : undefined,
-              top: by - 22,
-              transform: `scale(${0.9 + 0.1 * enter})`,
-              opacity: enter,
-              padding: "9px 18px",
-              borderRadius: 8,
-              backgroundColor: "rgba(15, 23, 42, 0.90)",
-              border: `1.5px solid ${accentHex}`,
-              boxShadow: "0 10px 26px rgba(0, 0, 0, 0.5)",
-              fontFamily: MONO_FONT,
-              fontSize: width < height ? 21 : 22,
-              fontWeight: 700,
-              letterSpacing: "0.06em",
-              color: "#F8FAFC",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {c.label}
-          </div>
+          <g key={idx}>
+            <rect x={bx} y={by} width={barW} height={bh} rx={6} fill={col} stroke={INK} strokeWidth={5} />
+            <text x={bx + barW / 2} y={by - 18} textAnchor="middle" fill={col} stroke={INK} strokeWidth={8} paintOrder="stroke" fontFamily={MARKER_FONT} fontSize={46}>
+              {prefix}{num.toLocaleString("en-US")}{suffix}
+            </text>
+            <text x={bx + barW / 2} y={y + h + 46} textAnchor="middle" fill="#1E293B" fontFamily={UI_FONT} fontSize={28} fontWeight={700}>
+              {b.label}
+            </text>
+          </g>
         );
       })}
-    </AbsoluteFill>
+      {multiplierTag && progress > 0.45 && (
+        <g transform={`translate(${x + w - 90} ${y + 110}) rotate(-10)`}>
+          <rect x={-72} y={-44} width={144} height={84} rx={10} fill="#FACC15" stroke={INK} strokeWidth={5} />
+          <text x={0} y={14} textAnchor="middle" fill={INK} fontFamily={MARKER_FONT} fontSize={48}>
+            {multiplierTag}
+          </text>
+        </g>
+      )}
+    </g>
   );
 };
 
-const StatCounterCard: React.FC<{
-  stat: StatCounter;
-  accentHex: string;
-  frame: number;
-  triggerFrame: number;
-  beatEndFrame: number;
-  isFirstBeat: boolean;
-  fps: number;
-  isVertical: boolean;
-}> = ({ stat, accentHex, frame, triggerFrame, beatEndFrame, isFirstBeat, fps, isVertical }) => {
-  const animFrame = Math.max(0, frame - triggerFrame + (isFirstBeat ? 4 : 0));
-  const progress = spring({
-    frame: animFrame,
-    fps,
-    config: { damping: 20, stiffness: 120, mass: 0.9 },
-  });
-  const fadeOut = interpolate(frame, [Math.max(0, beatEndFrame - 10), beatEndFrame], [1, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-  const opacity = (isFirstBeat ? 1 : Math.min(1, animFrame / 4)) * fadeOut;
-
-  const currentVal = stat.fromVal + (stat.toVal - stat.fromVal) * progress;
-  const formatted = formatCounterValue(currentVal, stat.decimals ?? 0, stat.prefix ?? "", stat.suffix ?? "");
+export const PieChart2D: React.FC<{
+  x: number;
+  y: number;
+  radius?: number;
+  slicePct: number;
+  label: string;
+  color?: string;
+  progress: number;
+}> = ({ x, y, radius = 230, slicePct, label, color = "#F59E0B", progress }) => {
+  const pull = Math.min(1, progress * 1.7) * 48;
+  const angle = (Math.min(90, Math.max(5, slicePct)) / 100) * Math.PI * 2;
+  const x2 = Math.cos(angle) * radius;
+  const y2 = Math.sin(angle) * radius;
+  const shownPct = Math.round(slicePct * Math.min(1, progress * 1.5));
 
   return (
-    <div
-      style={{
-        position: "absolute",
-        left: isVertical ? 48 : 64,
-        top: isVertical ? 96 : 52,
-        opacity,
-        transform: `translateY(${isFirstBeat ? 0 : (1 - progress) * 18}px)`,
-        padding: "16px 28px",
-        borderRadius: 14,
-        backgroundColor: "rgba(15, 23, 42, 0.90)",
-        border: `1.5px solid ${accentHex}`,
-        boxShadow: "0 18px 42px rgba(0, 0, 0, 0.6)",
-      }}
-    >
-      <div
-        style={{
-          fontFamily: MONO_FONT,
-          fontSize: isVertical ? 18 : 17,
-          fontWeight: 700,
-          letterSpacing: "0.1em",
-          color: "#CBD5E1",
-          marginBottom: 6,
-        }}
-      >
-        {stat.label}
-      </div>
-      <div
-        style={{
-          fontFamily: MONO_FONT,
-          fontSize: isVertical ? 54 : 60,
-          fontWeight: 700,
-          fontVariantNumeric: "tabular-nums",
-          lineHeight: 1.0,
-          color: accentHex,
-        }}
-      >
-        {formatted}
-      </div>
-    </div>
+    <g transform={`translate(${x} ${y})`}>
+      <ellipse cx={0} cy={28} rx={radius} ry={radius * 0.65} fill="#94A3B8" stroke={INK} strokeWidth={5} />
+      <ellipse cx={0} cy={0} rx={radius} ry={radius * 0.65} fill="#E5E7EB" stroke={INK} strokeWidth={5} />
+      <g transform={`translate(${pull * 0.7} ${-pull * 0.55})`}>
+        <path
+          d={`M 0 0 L ${radius} 0 A ${radius} ${radius * 0.65} 0 0 1 ${x2.toFixed(1)} ${(y2 * 0.65).toFixed(1)} Z`}
+          fill={color}
+          stroke={INK}
+          strokeWidth={5}
+        />
+      </g>
+      <text x={radius * 0.45} y={-radius * 0.72} textAnchor="middle" fill={color} stroke={INK} strokeWidth={9} paintOrder="stroke" fontFamily={MARKER_FONT} fontSize={74}>
+        {shownPct}%
+      </text>
+      <text x={radius * 0.45} y={-radius * 0.45} textAnchor="middle" fill="#1E293B" fontFamily={UI_FONT} fontSize={30} fontWeight={700}>
+        {label}
+      </text>
+    </g>
   );
 };
 
-const SubtitleBanner: React.FC<{
-  chunk: SubtitleChunk;
-  accentHex: string;
-  isVertical: boolean;
-}> = ({ chunk, accentHex, isVertical }) => (
-  <div
-    style={{
-      position: "absolute",
-      left: "50%",
-      bottom: isVertical ? 200 : 78,
-      transform: "translateX(-50%)",
-      maxWidth: isVertical ? "88%" : "76%",
-      padding: "12px 28px",
-      borderRadius: 14,
-      backgroundColor: "rgba(10, 16, 30, 0.84)",
-      border: `1.5px solid ${accentHex}55`,
-      boxShadow: "0 12px 30px rgba(0, 0, 0, 0.55)",
-      textAlign: "center",
-      lineHeight: 1.24,
-    }}
-  >
-    <span
-      style={{
-        fontFamily: DISPLAY_FONT,
-        fontSize: isVertical ? 44 : 48,
-        fontWeight: 700,
-        letterSpacing: "-0.015em",
-      }}
-    >
-      {chunk.words.map((w, wi) => (
-        <span
-          key={wi}
-          style={{
-            color: w.highlight ? accentHex : "#F8FAFC",
-            marginRight: wi === chunk.words.length - 1 ? 0 : 12,
-            textShadow: "0 3px 14px rgba(0,0,0,0.9)",
-          }}
-        >
-          {w.text}
-        </span>
+export const BalanceScale2D: React.FC<{
+  x: number;
+  y: number;
+  leftLabel: string;
+  rightLabel: string;
+  tiltDeg?: number;
+  leftColor?: string;
+  rightColor?: string;
+  progress: number;
+}> = ({ x, y, leftLabel, rightLabel, tiltDeg = 16, leftColor = "#22C55E", rightColor = "#EF4444", progress }) => {
+  const ease = Math.min(1, progress * 1.6);
+  const angle = tiltDeg * ease;
+  const rad = (angle * Math.PI) / 180;
+  const arm = 270;
+  const lx = -Math.cos(rad) * arm;
+  const ly = -Math.sin(rad) * arm;
+  const rx = Math.cos(rad) * arm;
+  const ry = Math.sin(rad) * arm;
+
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      <rect x={-90} y={210} width={180} height={30} rx={8} fill="#64748B" stroke={INK} strokeWidth={5} />
+      <rect x={-14} y={-20} width={28} height={235} fill="#94A3B8" stroke={INK} strokeWidth={5} />
+      <line x1={lx} y1={ly} x2={rx} y2={ry} stroke="#F59E0B" strokeWidth={16} strokeLinecap="round" />
+      <circle cx={0} cy={0} r={22} fill="#FACC15" stroke={INK} strokeWidth={5} />
+      {/* Left Pan */}
+      <g transform={`translate(${lx} ${ly})`}>
+        <line x1={0} y1={0} x2={-75} y2={135} stroke={INK} strokeWidth={4} />
+        <line x1={0} y1={0} x2={75} y2={135} stroke={INK} strokeWidth={4} />
+        <rect x={-105} y={135} width={210} height={24} rx={8} fill="#F59E0B" stroke={INK} strokeWidth={4} />
+        <rect x={-85} y={70} width={170} height={65} rx={8} fill={leftColor} stroke={INK} strokeWidth={4} />
+        <text x={0} y={112} textAnchor="middle" fill="#FFFFFF" fontFamily={UI_FONT} fontSize={26} fontWeight={700}>{leftLabel}</text>
+      </g>
+      {/* Right Pan */}
+      <g transform={`translate(${rx} ${ry})`}>
+        <line x1={0} y1={0} x2={-75} y2={135} stroke={INK} strokeWidth={4} />
+        <line x1={0} y1={0} x2={75} y2={135} stroke={INK} strokeWidth={4} />
+        <rect x={-105} y={135} width={210} height={24} rx={8} fill="#F59E0B" stroke={INK} strokeWidth={4} />
+        <rect x={-95} y={42} width={190} height={93} rx={8} fill={rightColor} stroke={INK} strokeWidth={4} />
+        <text x={0} y={98} textAnchor="middle" fill="#FFFFFF" fontFamily={UI_FONT} fontSize={26} fontWeight={700}>{rightLabel}</text>
+      </g>
+    </g>
+  );
+};
+
+export const ConveyorBelt2D: React.FC<{
+  x: number;
+  y: number;
+  w?: number;
+  items: string[];
+  accentHex?: string;
+  frame: number;
+  progress: number;
+}> = ({ x, y, w = 1320, items, accentHex = "#22C55E", frame, progress }) => {
+  const shift = (frame * 5) % 240;
+  const stampDip = Math.abs(Math.sin(frame * 0.12)) * 45;
+
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      {/* Overhead Robotic Arm Stamping */}
+      <g transform={`translate(${w * 0.5} ${-160 + stampDip})`}>
+        <rect x={-26} y={-140} width={52} height={140} fill="#F97316" stroke={INK} strokeWidth={5} />
+        <rect x={-64} y={0} width={128} height={30} rx={8} fill="#334155" stroke={INK} strokeWidth={5} />
+      </g>
+      {/* Belt Track */}
+      <rect x={0} y={0} width={w} height={64} rx={32} fill="#374151" stroke={INK} strokeWidth={6} />
+      {Array.from({ length: 6 }).map((_, ri) => (
+        <circle key={ri} cx={60 + (ri / 5) * (w - 120)} cy={32} r={20} fill="#94A3B8" stroke={INK} strokeWidth={4} />
       ))}
-    </span>
-  </div>
+      {/* Moving Items */}
+      {items.map((lbl, idx) => {
+        const ix = ((idx * 340 + shift) % (w - 160)) + 40;
+        return (
+          <g key={idx} transform={`translate(${ix} -96)`}>
+            <rect x={0} y={0} width={140} height={96} rx={12} fill={accentHex} stroke={INK} strokeWidth={5} />
+            <text x={70} y={60} textAnchor="middle" fill="#FFFFFF" fontFamily={MARKER_FONT} fontSize={34}>
+              {lbl}
+            </text>
+          </g>
+        );
+      })}
+      <line x1={0} y1={-4} x2={w} y2={-4} stroke="#FACC15" strokeWidth={8} strokeDasharray="24 18" strokeDashoffset={-shift} />
+      <rect x={0} y={64} width={w} height={18} fill="#1F2937" opacity={0.4 + progress * 0.1} />
+    </g>
+  );
+};
+
+export const WorldMapArc2D: React.FC<{
+  x: number;
+  y: number;
+  w?: number;
+  h?: number;
+  startPct?: [number, number];
+  endPct?: [number, number];
+  accentHex?: string;
+  zoomLabel?: string;
+  progress: number;
+  frame: number;
+}> = ({
+  x,
+  y,
+  w = 1280,
+  h = 640,
+  startPct = [24, 48],
+  endPct = [78, 52],
+  accentHex = "#EF4444",
+  zoomLabel = "GLOBAL LINK",
+  progress,
+  frame,
+}) => {
+  const sx = x + (startPct[0] / 100) * w;
+  const sy = y + (startPct[1] / 100) * h;
+  const ex = x + (endPct[0] / 100) * w;
+  const ey = y + (endPct[1] / 100) * h;
+  const mx = (sx + ex) * 0.5;
+  const my = Math.min(sy, ey) - h * 0.25;
+  const d = `M ${sx} ${sy} Q ${mx} ${my} ${ex} ${ey}`;
+  const arcLen = w * 1.2;
+  const draw = Math.min(1, progress * 1.4);
+
+  return (
+    <g>
+      <rect x={x} y={y} width={w} height={h} rx={18} fill="#7DA8BE" stroke={INK} strokeWidth={6} />
+      {/* Stylized Vector Continents */}
+      <polygon points={`${x+100},${y+120} ${x+380},${y+100} ${x+430},${y+290} ${x+260},${y+480} ${x+140},${y+310}`} fill="#D6C49D" stroke={INK} strokeWidth={4} />
+      <polygon points={`${x+560},${y+90} ${x+1120},${y+80} ${x+1180},${y+340} ${x+920},${y+420} ${x+620},${y+490} ${x+540},${y+250}`} fill="#D6C49D" stroke={INK} strokeWidth={4} />
+      {/* Animated Curved Route */}
+      <path d={d} fill="none" stroke={accentHex} strokeWidth={8} strokeDasharray="18 12" strokeDashoffset={-frame * 3} opacity={0.95} />
+      <circle cx={sx} cy={sy} r={14} fill="#FACC15" stroke={INK} strokeWidth={4} />
+      <circle cx={ex} cy={ey} r={16 * (0.7 + 0.4 * draw)} fill={accentHex} stroke={INK} strokeWidth={4} />
+      {/* Magnifying Glass Loupe */}
+      {progress > 0.3 && (
+        <g transform={`translate(${ex - 30} ${ey - 20})`}>
+          <circle cx={0} cy={0} r={96} fill="#FFFFFF" fillOpacity={0.22} stroke={INK} strokeWidth={8} />
+          <line x1={68} y1={68} x2={132} y2={132} stroke={INK} strokeWidth={16} strokeLinecap="round" />
+          <text x={0} y={-118} textAnchor="middle" fill="#FFFFFF" stroke={INK} strokeWidth={8} paintOrder="stroke" fontFamily={MARKER_FONT} fontSize={36}>
+            {zoomLabel}
+          </text>
+        </g>
+      )}
+    </g>
+  );
+};
+
+export const QuoteHighlight2D: React.FC<{
+  x: number;
+  y: number;
+  w?: number;
+  sourceTag: string;
+  quoteBefore: string;
+  highlightText: string;
+  quoteAfter?: string;
+  markStamp?: string;
+  progress: number;
+}> = ({
+  x,
+  y,
+  w = 1160,
+  sourceTag,
+  quoteBefore,
+  highlightText,
+  quoteAfter = "",
+  markStamp = "?!",
+  progress,
+}) => {
+  const hiFrac = Math.max(0, Math.min(1, (progress - 0.15) / 0.35));
+  const circleShow = progress > 0.48;
+
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      <rect x={0} y={0} width={w} height={460} rx={18} fill="#FFFFFF" stroke={INK} strokeWidth={6} />
+      <rect x={0} y={0} width={w} height={74} rx={14} fill="#1E293B" stroke={INK} strokeWidth={5} />
+      <circle cx={42} cy={37} r={14} fill="#22C55E" />
+      <text x={78} y={48} fill="#FFFFFF" fontFamily={UI_FONT} fontSize={30} fontWeight={700}>
+        {sourceTag}
+      </text>
+      <text x={70} y={175} fill="#475569" fontFamily={HAND_FONT} fontSize={54}>
+        {quoteBefore}
+      </text>
+      {/* Animated Yellow Highlighter Sweep */}
+      <rect x={64} y={208} width={Math.min(w - 140, highlightText.length * 29) * hiFrac} height={68} rx={8} fill="#FDE047" />
+      <text x={70} y={260} fill={INK} fontFamily={HAND_FONT} fontSize={62} fontWeight={700}>
+        {highlightText}
+      </text>
+      {quoteAfter && (
+        <text x={70} y={355} fill="#475569" fontFamily={HAND_FONT} fontSize={50}>
+          {quoteAfter}
+        </text>
+      )}
+      {circleShow && (
+        <g>
+          <ellipse cx={260} cy={240} rx={220} ry={58} fill="none" stroke="#EF4444" strokeWidth={8} transform="rotate(-2 260 240)" />
+          <text x={w - 120} y={180} fill="#EF4444" fontFamily={MARKER_FONT} fontSize={86} transform={`rotate(12 ${w - 120} 180)`}>
+            {markStamp}
+          </text>
+        </g>
+      )}
+    </g>
+  );
+};
+
+export const CalendarFlip2D: React.FC<{
+  x: number;
+  y: number;
+  pages: { month: string; day: string }[];
+  progress: number;
+}> = ({ x, y, pages, progress }) => {
+  const idx = Math.min(pages.length - 1, Math.floor(progress * pages.length));
+  const cur = pages[idx] || { month: "NOV", day: "30" };
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      <rect x={-140} y={-160} width={280} height={310} rx={14} fill="#FFFFFF" stroke={INK} strokeWidth={6} />
+      <rect x={-140} y={-160} width={280} height={84} rx={12} fill="#DC2626" stroke={INK} strokeWidth={6} />
+      <text x={0} y={-100} textAnchor="middle" fill="#FFFFFF" fontFamily={MARKER_FONT} fontSize={50}>{cur.month}</text>
+      <text x={0} y={74} textAnchor="middle" fill={INK} fontFamily={MARKER_FONT} fontSize={128}>{cur.day}</text>
+      {progress > 0.65 && (
+        <circle cx={0} cy={30} r={88} fill="none" stroke="#EF4444" strokeWidth={10} />
+      )}
+    </g>
+  );
+};
+
+export const Stopwatch2D: React.FC<{
+  x: number;
+  y: number;
+  radius?: number;
+  maxSecLabel?: string;
+  progress: number;
+}> = ({ x, y, radius = 125, maxSecLabel = "6:00", progress }) => {
+  const deg = progress * 360;
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      <rect x={-22} y={-radius - 32} width={44} height={32} rx={6} fill="#94A3B8" stroke={INK} strokeWidth={5} />
+      <circle cx={0} cy={0} r={radius} fill="#F8FAFC" stroke={INK} strokeWidth={8} />
+      <circle cx={0} cy={0} r={radius * 0.84} fill="none" stroke="#CBD5E1" strokeWidth={4} strokeDasharray="8 12" />
+      <line x1={0} y1={0} x2={0} y2={-radius * 0.72} stroke="#EF4444" strokeWidth={8} strokeLinecap="round" transform={`rotate(${deg})`} />
+      <circle cx={0} cy={0} r={12} fill={INK} />
+      <text x={0} y={radius + 64} textAnchor="middle" fill="#1E293B" stroke="#FFFFFF" strokeWidth={8} paintOrder="stroke" fontFamily={MARKER_FONT} fontSize={48}>
+        {maxSecLabel}
+      </text>
+    </g>
+  );
+};
+
+export const SplitScreen3Panel: React.FC<{
+  progress: number;
+  panel1: React.ReactNode;
+  panel2: React.ReactNode;
+  panel3: React.ReactNode;
+}> = ({ progress, panel1, panel2, panel3 }) => {
+  const show2 = progress >= 0.25;
+  const show3 = progress >= 0.52;
+  return (
+    <g>
+      <g>{panel1}</g>
+      {show2 && <g>{panel2}</g>}
+      {show3 && <g>{panel3}</g>}
+      <line x1={640} y1={0} x2={640} y2={1080} stroke={INK} strokeWidth={10} />
+      <line x1={1280} y1={0} x2={1280} y2={1080} stroke={INK} strokeWidth={10} />
+    </g>
+  );
+};
+
+export const ReactorVessel2D: React.FC<{
+  x: number;
+  y: number;
+  scale?: number;
+  accentHex?: string;
+  frame: number;
+  progress: number;
+}> = ({ x, y, scale = 1, accentHex = "#38BDF8", frame, progress }) => {
+  const rodOffset = Math.sin(frame * 0.14) * 28;
+  const lidLift = Math.min(1, progress * 1.5) * 40;
+  return (
+    <g transform={`translate(${x} ${y}) scale(${scale})`}>
+      <path d="M -130 -60 Q -130 -230 0 -230 Q 130 -230 130 -60 L 130 160 L -130 160 Z" fill="#64748B" stroke={INK} strokeWidth={6} />
+      {/* Cutaway Cherenkov Core Window */}
+      <rect x={-90} y={-80} width={180} height={210} rx={16} fill="#0EA5E9" stroke={INK} strokeWidth={5} />
+      <rect x={-76} y={-40} width={152} height={155} rx={10} fill={accentHex} opacity={0.75 + Math.sin(frame * 0.2) * 0.2} />
+      {/* Oscillating Control Rods */}
+      {[-42, 0, 42].map((rx, i) => (
+        <rect key={i} x={rx - 10} y={-110 + rodOffset * (i % 2 === 0 ? 1 : -1)} width={20} height={140} rx={6} fill="#FACC15" stroke={INK} strokeWidth={4} />
+      ))}
+      <rect x={-148} y={-180 - lidLift} width={296} height={28} rx={8} fill="#475569" stroke={INK} strokeWidth={5} />
+    </g>
+  );
+};
+
+export const CoolingTower2D: React.FC<{
+  x: number;
+  y: number;
+  scale?: number;
+  accentHex?: string;
+  frame: number;
+}> = ({ x, y, scale = 1, accentHex = "#38BDF8", frame }) => {
+  const puff = (frame * 2.1) % 120;
+  return (
+    <g transform={`translate(${x} ${y}) scale(${scale})`}>
+      <polygon points="-130,170 -85,-140 85,-140 130,170" fill="#94A3B8" stroke={INK} strokeWidth={6} />
+      <rect x={-92} y={80} width={184} height={74} rx={8} fill={accentHex} stroke={INK} strokeWidth={4} />
+      {/* Rising Steam Clouds */}
+      {[0, 40, 80].map((off, i) => {
+        const py = -165 - ((puff + off) % 120);
+        const op = 1 - ((puff + off) % 120) / 130;
+        return <circle key={i} cx={-25 + i * 26} cy={py} r={34} fill="#F8FAFC" stroke={INK} strokeWidth={4} opacity={op} />;
+      })}
+    </g>
+  );
+};
+
+export const ServerRack2D: React.FC<{
+  x: number;
+  y: number;
+  scale?: number;
+  accentHex?: string;
+  frame: number;
+}> = ({ x, y, scale = 1, accentHex = "#22D3EE", frame }) => (
+  <g transform={`translate(${x} ${y}) scale(${scale})`}>
+    <rect x={-105} y={-190} width={210} height={380} rx={12} fill="#1E293B" stroke={INK} strokeWidth={6} />
+    {[-140, -80, -20, 40, 100].map((ry, i) => {
+      const active = Math.sin(frame * 0.25 - i * 0.9) > -0.2;
+      return (
+        <g key={i}>
+          <rect x={-82} y={ry} width={164} height={44} rx={6} fill="#334155" stroke={INK} strokeWidth={4} />
+          <circle cx={-56} cy={ry + 22} r={8} fill={active ? accentHex : "#475569"} />
+          <rect x={-28} y={ry + 15} width={86} height={14} rx={4} fill={active ? "#38BDF8" : "#475569"} />
+        </g>
+      );
+    })}
+  </g>
 );
 
-export const HudOverlay: React.FC<{ plan: DocumentaryPlan }> = ({ plan }) => {
+export const Microchip2D: React.FC<{
+  x: number;
+  y: number;
+  scale?: number;
+  color?: string;
+  cracked?: boolean;
+  overheating?: boolean;
+  frame: number;
+  progress: number;
+}> = ({ x, y, scale = 1, color = "#22C55E", cracked = false, overheating = false, frame, progress }) => {
+  const fillCol = overheating ? "#F97316" : color;
+  const crackProg = Math.min(1, progress * 1.6);
+  return (
+    <g transform={`translate(${x} ${y}) scale(${scale})`}>
+      {[-120, -60, 0, 60, 120].map((p, i) => (
+        <React.Fragment key={i}>
+          <rect x={p - 12} y={-188} width={24} height={36} fill="#FACC15" stroke={INK} strokeWidth={4} />
+          <rect x={p - 12} y={152} width={24} height={36} fill="#FACC15" stroke={INK} strokeWidth={4} />
+          <rect x={-188} y={p - 12} width={36} height={24} fill="#FACC15" stroke={INK} strokeWidth={4} />
+          <rect x={152} y={p - 12} width={36} height={24} fill="#FACC15" stroke={INK} strokeWidth={4} />
+        </React.Fragment>
+      ))}
+      <rect x={-154} y={-154} width={308} height={308} rx={20} fill="#14532D" stroke={INK} strokeWidth={7} />
+      <rect x={-105} y={-105} width={210} height={210} rx={12} fill={fillCol} stroke={INK} strokeWidth={5} opacity={0.85 + Math.sin(frame * 0.25) * 0.15} />
+      {cracked && (
+        <path
+          d="M 85 -85 L 25 -20 L 55 15 L -30 90"
+          fill="none"
+          stroke="#FEF08A"
+          strokeWidth={9}
+          strokeLinecap="round"
+          strokeDasharray={300}
+          strokeDashoffset={300 * (1 - crackProg)}
+        />
+      )}
+    </g>
+  );
+};
+
+export const PowerPylon2D: React.FC<{
+  x: number;
+  y: number;
+  scale?: number;
+  accentHex?: string;
+  frame: number;
+}> = ({ x, y, scale = 1, accentHex = "#F59E0B", frame }) => {
+  const pulse = 0.6 + 0.4 * Math.sin(frame * 0.3);
+  return (
+    <g transform={`translate(${x} ${y}) scale(${scale})`}>
+      <polygon points="-90,190 -24,-190 24,-190 90,190" fill="none" stroke={INK} strokeWidth={8} />
+      <line x1={-125} y1={-90} x2={125} y2={-90} stroke={INK} strokeWidth={10} strokeLinecap="round" />
+      <line x1={-95} y1={-150} x2={95} y2={-150} stroke={INK} strokeWidth={10} strokeLinecap="round" />
+      <circle cx={-120} cy={-78} r={14} fill={accentHex} stroke={INK} strokeWidth={4} opacity={pulse} />
+      <circle cx={120} cy={-78} r={14} fill={accentHex} stroke={INK} strokeWidth={4} opacity={pulse} />
+    </g>
+  );
+};
+
+export const BatteryBank2D: React.FC<{
+  x: number;
+  y: number;
+  scale?: number;
+  accentHex?: string;
+  frame: number;
+  progress: number;
+}> = ({ x, y, scale = 1, accentHex = "#10B981", frame, progress }) => {
+  const lvl = Math.max(0.25, Math.min(1, progress + 0.15 * Math.sin(frame * 0.12)));
+  return (
+    <g transform={`translate(${x} ${y}) scale(${scale})`}>
+      <rect x={-140} y={-110} width={280} height={220} rx={16} fill="#E2E8F0" stroke={INK} strokeWidth={6} />
+      <rect x={-105} y={-72} width={140} height={144} rx={8} fill="#334155" stroke={INK} strokeWidth={4} />
+      <rect x={58} y={76 - lvl * 144} width={44} height={lvl * 144} rx={6} fill={accentHex} stroke={INK} strokeWidth={4} />
+    </g>
+  );
+};
+
+export const AnimatedPipe2D: React.FC<{
+  d: string;
+  color?: string;
+  fluidColor?: string;
+  strokeWidth?: number;
+  frame: number;
+}> = ({ d, color = "#475569", fluidColor = "#22D3EE", strokeWidth = 28, frame }) => (
+  <g>
+    <path d={d} fill="none" stroke={INK} strokeWidth={strokeWidth + 10} strokeLinecap="round" strokeLinejoin="round" />
+    <path d={d} fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+    <path
+      d={d}
+      fill="none"
+      stroke={fluidColor}
+      strokeWidth={strokeWidth * 0.45}
+      strokeDasharray="24 22"
+      strokeDashoffset={-frame * 5}
+      strokeLinecap="round"
+    />
+  </g>
+);
+
+export const ExplosionBurst2D: React.FC<{
+  x: number;
+  y: number;
+  color?: string;
+  triggerSec: number;
+  localTime: number;
+}> = ({ x, y, color = "#FACC15", triggerSec, localTime }) => {
+  const dt = localTime - triggerSec;
+  if (dt < 0 || dt > 0.65) return null;
+  const s = 0.4 + (dt / 0.65) * 1.4;
+  const op = 1 - dt / 0.65;
+  return (
+    <g transform={`translate(${x} ${y}) scale(${s})`} opacity={op}>
+      <polygon
+        points="0,-90 22,-28 86,-42 36,10 82,66 14,38 -20,92 -28,26 -90,12 -32,-22"
+        fill={color}
+        stroke={INK}
+        strokeWidth={5}
+      />
+    </g>
+  );
+};
+'''
+
+FILES["src/components/CartoonStage2D.tsx"] = r'''
+import React from "react";
+import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
+import { SCENE_REGISTRY } from "../generated/SceneRegistry";
+import type { CartoonPlan, Transition2D } from "../types";
+
+function computeTransitionTransform(
+  transition: Transition2D,
+  enterProg: number,
+  width: number,
+  height: number
+): { transform?: string; opacity: number } {
+  const p = Math.max(0, Math.min(1, enterProg));
+  const ease = p * p * (3 - 2 * p);
+
+  switch (transition) {
+    case "slide_left":
+      return { transform: `translateX(${(1 - ease) * width}px)`, opacity: 1 };
+    case "slide_up":
+      return { transform: `translateY(${(1 - ease) * height}px)`, opacity: 1 };
+    case "wipe_right":
+      return { transform: `translateX(${-(1 - ease) * width}px)`, opacity: 1 };
+    case "zoom_dissolve":
+      return { transform: `scale(${0.92 + 0.08 * ease})`, opacity: ease };
+    case "flash_cut":
+    default:
+      return { opacity: Math.min(1, p * 2.5) };
+  }
+}
+
+export const CartoonStage2D: React.FC<{ plan: CartoonPlan }> = ({ plan }) => {
   const frame = useCurrentFrame();
   const { width, height, fps } = useVideoConfig();
   const tSec = frame / fps;
   const isVertical = height > width;
+  const transSec = 0.28; // Snappy 8-frame human-editor transition
 
-  const activeSceneIdx = plan.scenes.findIndex((s) => tSec >= s.startSec && tSec <= s.endSec);
-  const resolvedSceneIdx = activeSceneIdx === -1 ? plan.scenes.length - 1 : activeSceneIdx;
-  const activeScene = plan.scenes[resolvedSceneIdx];
+  let activeIdx = plan.scenes.findIndex((s) => tSec >= s.startSec && tSec <= s.endSec);
+  if (activeIdx === -1) activeIdx = plan.scenes.length - 1;
 
-  const activeBeatIdx = activeScene?.beats.findIndex((b) => tSec >= b.startSec && tSec <= b.endSec) ?? -1;
-  const resolvedBeatIdx = activeBeatIdx === -1 ? Math.max(0, (activeScene?.beats.length ?? 1) - 1) : activeBeatIdx;
-  const activeBeat = activeScene?.beats[resolvedBeatIdx];
+  const activeScene = plan.scenes[activeIdx];
+  const prevScene = activeIdx > 0 ? plan.scenes[activeIdx - 1] : null;
+  if (!activeScene) return null;
 
-  const activeSubtitle = plan.subtitleChunks.find((c) => tSec >= c.startSec && tSec <= c.endSec);
+  const timeIntoScene = tSec - activeScene.startSec;
+  const inTransition = Boolean(prevScene && timeIntoScene < transSec);
+  const enterProg = inTransition ? Math.max(0, Math.min(1, timeIntoScene / transSec)) : 1;
 
-  if (!activeScene || !activeBeat) return null;
+  const ActiveComp = SCENE_REGISTRY[activeScene.id];
+  const PrevComp = prevScene ? SCENE_REGISTRY[prevScene.id] : null;
 
-  const isFirstBeat = resolvedSceneIdx === 0 && resolvedBeatIdx === 0;
-  const beatStartFrame = Math.round(activeBeat.startSec * fps);
-  const beatEndFrame = Math.round(activeBeat.endSec * fps);
-  const localBeatFrame = Math.max(0, frame - beatStartFrame);
-  const beatDurFrames = Math.max(15, beatEndFrame - beatStartFrame);
+  const activeDur = Math.max(0.1, activeScene.endSec - activeScene.startSec);
+  const activeProgress = Math.max(0, Math.min(1, timeIntoScene / activeDur));
+  const activeStyle = inTransition
+    ? computeTransitionTransform(activeScene.transition, enterProg, width, height)
+    : { opacity: 1 };
 
-  const rawTrigFrame = Math.round(activeBeat.triggerSec * fps);
-  const triggerFrame = isFirstBeat
-    ? 0
-    : Math.min(rawTrigFrame, beatStartFrame + Math.round(beatDurFrames * 0.35));
+  const flashOpacity =
+    inTransition && activeScene.transition === "flash_cut"
+      ? interpolate(enterProg, [0, 0.35, 1], [0.85, 0.4, 0], { extrapolateRight: "clamp" })
+      : 0;
 
   return (
-    <AbsoluteFill style={{ pointerEvents: "none" }}>
-      {activeBeat.callouts?.length > 0 && (
-        <CalloutLayer
-          callouts={activeBeat.callouts}
-          accentHex={activeScene.accentHex}
-          localBeatFrame={localBeatFrame}
-          beatDurFrames={beatDurFrames}
-          isFirstBeat={isFirstBeat}
-          fps={fps}
-          width={width}
-          height={height}
-        />
+    <AbsoluteFill style={{ backgroundColor: "#05070B", overflow: "hidden" }}>
+      {inTransition && prevScene && PrevComp && (
+        <AbsoluteFill>
+          <PrevComp
+            frame={frame}
+            localFrame={Math.max(0, frame - Math.round(prevScene.startSec * fps))}
+            localTime={tSec - prevScene.startSec}
+            durationSec={Math.max(0.1, prevScene.endSec - prevScene.startSec)}
+            progress={1}
+            peakTimes={prevScene.localPeakTimes}
+            accentHex={prevScene.accentHex}
+            backdropTheme={prevScene.backdropTheme}
+            cameraMove={prevScene.cameraMove}
+            isVertical={isVertical}
+          />
+        </AbsoluteFill>
       )}
 
-      {activeBeat.statCounter && (
-        <StatCounterCard
-          stat={activeBeat.statCounter}
-          accentHex={activeScene.accentHex}
-          frame={frame}
-          triggerFrame={triggerFrame}
-          beatEndFrame={beatEndFrame}
-          isFirstBeat={isFirstBeat}
-          fps={fps}
-          isVertical={isVertical}
-        />
+      {ActiveComp && (
+        <AbsoluteFill style={activeStyle}>
+          <ActiveComp
+            frame={frame}
+            localFrame={Math.max(0, frame - Math.round(activeScene.startSec * fps))}
+            localTime={timeIntoScene}
+            durationSec={activeDur}
+            progress={activeProgress}
+            peakTimes={activeScene.localPeakTimes}
+            accentHex={activeScene.accentHex}
+            backdropTheme={activeScene.backdropTheme}
+            cameraMove={activeScene.cameraMove}
+            isVertical={isVertical}
+          />
+        </AbsoluteFill>
       )}
 
-      {activeSubtitle && (
-        <SubtitleBanner chunk={activeSubtitle} accentHex={activeScene.accentHex} isVertical={isVertical} />
+      {flashOpacity > 0 && (
+        <AbsoluteFill style={{ backgroundColor: "#FFFFFF", opacity: flashOpacity, pointerEvents: "none" }} />
       )}
     </AbsoluteFill>
   );
@@ -3290,87 +2748,93 @@ export const HudOverlay: React.FC<{ plan: DocumentaryPlan }> = ({ plan }) => {
 FILES["src/generated/scenes/Scene_01.tsx"] = r'''
 import React from "react";
 import {
-  DataHallBuilding,
-  CitySkylineBlock,
-  PowerPylon,
-  PipeConduit,
-} from "../../components/StudioKit";
-import type { DynamicSceneProps } from "../../types";
+  SceneBackdrop2D,
+  Camera2D,
+  CartoonCharacter2D,
+  Microchip2D,
+  InkCallout2D,
+} from "../../components/CartoonKit2D";
+import type { Scene2DProps } from "../../types";
 
-export const Scene_01: React.FC<DynamicSceneProps> = ({ frame, progress, accentHex }) => {
+export const Scene_01: React.FC<Scene2DProps> = (props) => {
+  const { frame, localTime, progress, peakTimes, accentHex, backdropTheme, cameraMove, isVertical } = props;
+  const vb = isVertical ? "0 0 1080 1920" : "0 0 1920 1080";
   return (
-    <group>
-      <DataHallBuilding pos={[-0.9, -0.2, 0]} size={[3.0, 1.5, 2.2]} accentHex={accentHex} progress={progress} frame={frame} />
-      <PowerPylon pos={[0.95, 0.0, -0.6]} height={2.3} accentHex="#F59E0B" />
-      <CitySkylineBlock pos={[2.1, -0.25, 0.4]} scale={0.85} accentHex="#F59E0B" frame={frame} />
-      <PipeConduit
-        points={[[-0.9, -0.8, 0.9], [0.95, 0.4, -0.6], [2.1, -0.6, 0.4]]}
-        fluidColor={accentHex}
-        flangeCount={3}
-        speed={0.85}
-        frame={frame}
-      />
-    </group>
+    <svg viewBox={vb} style={{ width: "100%", height: "100%", display: "block" }}>
+      <SceneBackdrop2D theme={backdropTheme} frame={frame} accentHex={accentHex} />
+      <Camera2D move={cameraMove} progress={progress} frame={frame} peakTimes={peakTimes} localTime={localTime}>
+        <CartoonCharacter2D
+          x={isVertical ? 330 : 540}
+          y={isVertical ? 1120 : 690}
+          scale={1.35}
+          variant="ceo"
+          mood="worried"
+          pose="hold_up"
+          glasses={true}
+          sweatDrop={true}
+          frame={frame}
+        />
+        <Microchip2D
+          x={isVertical ? 650 : 1220}
+          y={isVertical ? 760 : 530}
+          scale={1.45}
+          color={accentHex}
+          cracked={true}
+          frame={frame}
+          progress={progress}
+        />
+        <InkCallout2D
+          x={isVertical ? 540 : 1480}
+          y={isVertical ? 320 : 210}
+          text="$100B"
+          color="#EF4444"
+          fontSize={86}
+          localTime={localTime}
+          delaySec={0.2}
+        />
+      </Camera2D>
+    </svg>
   );
 };
 '''
 
 FILES["src/generated/SceneRegistry.ts"] = r'''
 import type React from "react";
-import type { DynamicSceneProps } from "../types";
+import type { Scene2DProps } from "../types";
 import { Scene_01 } from "./scenes/Scene_01";
 
-export const SCENE_REGISTRY: Record<string, React.FC<DynamicSceneProps>> = {
+export const SCENE_REGISTRY: Record<string, React.FC<Scene2DProps>> = {
   scene_01: Scene_01,
 };
 '''
 
 FILES["src/generated/ScenesData.ts"] = r'''
-import type { DocumentaryPlan } from "../types";
+import type { CartoonPlan } from "../types";
 
-export const SCENE_PLAN: DocumentaryPlan = {
-  channel: "InfraVerse",
+export const SCENE_PLAN: CartoonPlan = {
+  channel: "InfraVerse2D",
   fps: 30,
   width: 1920,
   height: 1080,
-  totalDurationSec: 8,
+  totalDurationSec: 6,
   hasAudio: false,
-  bpm: 102,
-  emphasisPeaksSec: [0.2, 4.5],
-  subtitleChunks: [],
+  bpm: 104,
+  emphasisPeaksSec: [0.4, 3.2],
   scenes: [
     {
       id: "scene_01",
       componentName: "Scene_01",
-      visualConcept: "Data Hall Campus & City Grid",
-      visualSpec: "DataHallBuilding + PowerPylon + CitySkylineBlock",
+      visualConcept: "Baseline 2D Cartoon Scene",
+      visualSpec: "Character holding cracking chip on night mountains",
+      titleText: "",
+      backdropTheme: "night_mountains",
+      cameraMove: "push_in",
+      transition: "flash_cut",
+      sfx: "sub_impact",
+      accentHex: "#22C55E",
       startSec: 0,
-      endSec: 8,
-      worldPos: [0, 0, 0],
-      bgHex: "#101B2E",
-      accentHex: "#22D3EE",
-      beats: [
-        {
-          id: "b_01_01",
-          startSec: 0,
-          endSec: 4,
-          triggerSec: 0.0,
-          cameraOffset: [3.8, 2.0, 4.3],
-          lookOffset: [0, 0.3, 0],
-          callouts: [{ label: "1,000 MW DATA HALL", anchorPct: [44, 52], boxPct: [74, 24] }],
-          statCounter: { label: "TOTAL CAMPUS CAPEX", fromVal: 0, toVal: 100, prefix: "$", suffix: "B", decimals: 0 },
-        },
-        {
-          id: "b_01_02",
-          startSec: 4,
-          endSec: 8,
-          triggerSec: 4.2,
-          cameraOffset: [1.5, 1.3, 3.0],
-          lookOffset: [0.15, 0.25, 0],
-          callouts: [{ label: "CITY POWER DRAW", anchorPct: [60, 56], boxPct: [22, 34] }],
-          statCounter: null,
-        },
-      ],
+      endSec: 6,
+      localPeakTimes: [0.4, 3.2],
     },
   ],
 };
@@ -3379,17 +2843,15 @@ export const SCENE_PLAN: DocumentaryPlan = {
 FILES["src/generated/GeneratedTimeline.tsx"] = r'''
 import React from "react";
 import { AbsoluteFill } from "remotion";
-import { Continuous3DWorld } from "../components/Continuous3DWorld";
-import { HudOverlay } from "../components/HudOverlay";
+import { CartoonStage2D } from "../components/CartoonStage2D";
 import { SCENE_PLAN } from "./ScenesData";
 
-export const GENERATED_TOTAL_FRAMES = 240;
+export const GENERATED_TOTAL_FRAMES = 180;
 
 export const GeneratedTimeline: React.FC = () => {
   return (
     <AbsoluteFill>
-      <Continuous3DWorld plan={SCENE_PLAN} />
-      <HudOverlay plan={SCENE_PLAN} />
+      <CartoonStage2D plan={SCENE_PLAN} />
     </AbsoluteFill>
   );
 };
@@ -3402,7 +2864,7 @@ import { GeneratedTimeline } from "./generated/GeneratedTimeline";
 
 export const Main: React.FC = () => {
   return (
-    <AbsoluteFill style={{ backgroundColor: "#101B2E" }}>
+    <AbsoluteFill style={{ backgroundColor: "#05070B" }}>
       <GeneratedTimeline />
     </AbsoluteFill>
   );
@@ -3468,6 +2930,14 @@ on:
         options:
           - "1080p_30fps"
           - "720p_24fps"
+      include_bgm:
+        description: "Include auto background music? (false = pure voice + SFX so you can add YT Audio Library music)"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
       force_workers:
         description: "Parallel workers (auto = 1 for <90s, 4 for 2-5m, 6 for 6m+)"
         required: false
@@ -3558,7 +3028,7 @@ jobs:
           npm install --no-audit --no-fund
           npx remotion browser ensure
 
-      - name: Step 1 - Audio Clean & Word-Level Whisper Timestamps
+      - name: Step 1 - Audio Clean & Word-Level Whisper Sync
         if: steps.check_input.outputs.has_input == 'true'
         env:
           INPUT_FOLDER: "input"
@@ -3568,7 +3038,7 @@ jobs:
         run: |
           python scripts/analyze_audio.py
 
-      - name: Step 2 - Gemini Multi-Part 3D & HUD Scene Coder
+      - name: Step 2 - Gemini 2D Cartoon Storyboard, Scene Illustrator & Self-Healer
         if: steps.check_input.outputs.has_input == 'true'
         env:
           INPUT_FOLDER: "input"
@@ -3578,20 +3048,22 @@ jobs:
         run: |
           python scripts/generate_scenes.py
 
-      - name: Step 3 - Validate Uniqueness, Beats & Zero Overlaps
+      - name: Step 3 - Audit Zero Repetition & Continuous Flow
         if: steps.check_input.outputs.has_input == 'true'
         run: |
           python scripts/validate_scenes.py
 
-      - name: Step 4 - Synthesize & Duck Master Documentary Audio
+      - name: Step 4 - Synthesize & Sync SFX + Underscore Audio
         if: steps.check_input.outputs.has_input == 'true'
+        env:
+          INCLUDE_BGM: ${{ github.event.inputs.include_bgm || 'true' }}
         run: |
           python scripts/mix_audio.py
 
-      - name: Step 5 - Frame 0 Smoke Test & Bundle Project Once
+      - name: Step 5 - Frame 0 Smoke Test & Bundle Once
         if: steps.check_input.outputs.has_input == 'true'
         run: |
-          npx remotion still src/index.ts Main work/frame0_smoke.png --frame=0 --gl=swangle
+          npx remotion still src/index.ts Main work/frame0_smoke.png --frame=0
           npx remotion bundle src/index.ts --public-dir public --out-dir build_bundle
 
       - name: Step 6 - Plan Adaptive Parallel Workers (1 / 4 / 6)
@@ -3602,7 +3074,7 @@ jobs:
         run: |
           python scripts/plan_chunks.py
 
-      - name: Upload Prepared Bundle & Master Audio
+      - name: Upload Prepared Bundle & Audio
         if: steps.check_input.outputs.has_input == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -3619,7 +3091,7 @@ jobs:
     needs: plan_and_prepare
     if: needs.plan_and_prepare.outputs.has_input == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -3654,7 +3126,7 @@ jobs:
           npm install --no-audit --no-fund
           npx remotion browser ensure
 
-      - name: Render Silent 3D + HUD Chunk ${{ matrix.chunk.idx }}
+      - name: Render 2D Cartoon Chunk ${{ matrix.chunk.idx }}
         run: |
           mkdir -p out
           npx remotion render build_bundle Main out/chunk_${{ matrix.chunk.idx }}.mp4 \
@@ -3663,11 +3135,10 @@ jobs:
             --concurrency=3 \
             --codec=h264 \
             --pixel-format=yuv420p \
-            --crf=22 \
+            --crf=21 \
             --x264-preset=veryfast \
             --image-format=jpeg \
-            --jpeg-quality=90 \
-            --gl=swangle
+            --jpeg-quality=92
 
       - name: Upload Rendered Chunk ${{ matrix.chunk.idx }}
         uses: actions/upload-artifact@v4
@@ -3708,13 +3179,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      - name: Seamlessly Join Video Chunks + Master Audio
+      - name: Join Chunks + Master Audio
         env:
           VIDEO_FORMAT: "long_16_9"
         run: |
           python scripts/stitch_chunks.py
 
-      - name: Upload Final 16:9 Video
+      - name: Upload Final 16:9 2D Video
         uses: actions/upload-artifact@v4
         with:
           name: InfraVerse-Long-16-9
@@ -3735,6 +3206,14 @@ on:
       - "input_short/**"
   workflow_dispatch:
     inputs:
+      include_bgm:
+        description: "Include auto background music?"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
       trim_silence:
         description: "Trim long pauses (>0.65s) in Short voiceover?"
         required: false
@@ -3815,7 +3294,7 @@ jobs:
           npm install --no-audit --no-fund
           npx remotion browser ensure
 
-      - name: Step 1 - Clean Short Audio & Word Timestamps
+      - name: Step 1 - Clean Short Audio & Word Sync
         if: steps.check_input.outputs.has_input == 'true'
         env:
           INPUT_FOLDER: "input_short"
@@ -3825,7 +3304,7 @@ jobs:
         run: |
           python scripts/analyze_audio.py
 
-      - name: Step 2 - Gemini Vertical 9:16 Multi-Part 3D & HUD Coder
+      - name: Step 2 - Gemini Vertical 9:16 2D Cartoon Illustrator
         if: steps.check_input.outputs.has_input == 'true'
         env:
           INPUT_FOLDER: "input_short"
@@ -3834,20 +3313,22 @@ jobs:
         run: |
           python scripts/generate_scenes.py
 
-      - name: Step 3 - Validate Uniqueness, Beats & Zero Overlaps
+      - name: Step 3 - Audit Zero Repetition & Continuous Flow
         if: steps.check_input.outputs.has_input == 'true'
         run: |
           python scripts/validate_scenes.py
 
-      - name: Step 4 - Synthesize & Duck Master Short Audio
+      - name: Step 4 - Synthesize & Sync SFX + Underscore Audio
         if: steps.check_input.outputs.has_input == 'true'
+        env:
+          INCLUDE_BGM: ${{ github.event.inputs.include_bgm || 'true' }}
         run: |
           python scripts/mix_audio.py
 
-      - name: Step 5 - Frame 0 Smoke Test & Bundle Project Once
+      - name: Step 5 - Frame 0 Smoke Test & Bundle Once
         if: steps.check_input.outputs.has_input == 'true'
         run: |
-          npx remotion still src/index.ts Main work/frame0_smoke.png --frame=0 --gl=swangle
+          npx remotion still src/index.ts Main work/frame0_smoke.png --frame=0
           npx remotion bundle src/index.ts --public-dir public --out-dir build_bundle
 
       - name: Step 6 - Plan Workers
@@ -3910,7 +3391,7 @@ jobs:
           npm install --no-audit --no-fund
           npx remotion browser ensure
 
-      - name: Render Vertical 9:16 + HUD Chunk ${{ matrix.chunk.idx }}
+      - name: Render Vertical 9:16 2D Chunk ${{ matrix.chunk.idx }}
         run: |
           mkdir -p out
           npx remotion render build_bundle Main out/chunk_${{ matrix.chunk.idx }}.mp4 \
@@ -3919,11 +3400,10 @@ jobs:
             --concurrency=3 \
             --codec=h264 \
             --pixel-format=yuv420p \
-            --crf=22 \
+            --crf=21 \
             --x264-preset=veryfast \
             --image-format=jpeg \
-            --jpeg-quality=90 \
-            --gl=swangle
+            --jpeg-quality=92
 
       - name: Upload Short Chunk ${{ matrix.chunk.idx }}
         uses: actions/upload-artifact@v4
@@ -3964,7 +3444,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      - name: Seamlessly Join Short Video + Master Audio
+      - name: Join Short Video + Master Audio
         env:
           VIDEO_FORMAT: "short_9_16"
         run: |
@@ -4006,10 +3486,10 @@ def run_git_push() -> None:
 
     git("add", ".")
     if git("diff", "--cached", "--quiet", check=False).returncode != 0:
-        git("commit", "-m", "Upgrade to v3.1: Closer Camera, Blueprint Grid, Literal Prefabs & Fixed HUD/Subtitles")
+        git("commit", "-m", "Upgrade to v4.0: Video-1 2D Cartoon Style + Characters + Switchable Environments")
     if git("push", check=False).returncode != 0:
         git("push", "-u", "origin", "HEAD")
-    print("\n[setup_factory] SUCCESS! v3.1 Factory is live on GitHub.")
+    print("\n[setup_factory] SUCCESS! v4.0 Video-1 2D Cartoon Factory is live on GitHub.")
 
 
 if __name__ == "__main__":
