@@ -8,17 +8,18 @@ from google import genai
 from google.genai import types
 from google.genai.errors import APIError
 
-# Prioritize Gemini 4 Hydrogen with Extra Thinking (xhigh), falling back safely to high & 3.8/3.5
+# Gemini 4 Hydrogen at HIGH thinking (Google's default: score 51 vs 54 at xhigh,
+# finishes in ~20-45s instead of xhigh's 10-21 minute hang per request)
 PRO_MODEL_CHAIN = [
-    ("gemini-4-hydrogen", "xhigh"),
     ("gemini-4-hydrogen", "high"),
+    ("gemini-4-hydrogen", "medium"),
     ("gemini-3.8-flash", "high"),
     ("gemini-3.5-flash-lite", "high"),
 ]
 
 FLASH_MODEL_CHAIN = [
-    ("gemini-4-hydrogen", "xhigh"),
     ("gemini-4-hydrogen", "high"),
+    ("gemini-4-hydrogen", "medium"),
     ("gemini-3.5-flash-lite", "high"),
     ("gemini-3.8-flash", "high"),
 ]
@@ -30,7 +31,10 @@ def get_client() -> genai.Client:
         raise RuntimeError(
             "Missing GEMINI_API_KEY secret. Add it in GitHub Repo -> Settings -> Secrets -> Actions."
         )
-    return genai.Client(api_key=api_key)
+    return genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(timeout=600_000),  # 10 min read timeout in ms
+    )
 
 
 def clean_json_text(raw: str) -> str:
@@ -61,11 +65,13 @@ def generate_with_fallback(
     last_error: Optional[Exception] = None
 
     for model_name, thinking_lvl in chain:
-        # Gemini 4 shares output limit with thinking tokens, so keep full 65,536 budget for xhigh
         token_cap = 65536 if model_name.startswith("gemini-4") else max_output_tokens
         config_kwargs: dict[str, Any] = {
             "max_output_tokens": token_cap,
-            "thinking_config": types.ThinkingConfig(thinking_level=thinking_lvl),
+            "thinking_config": types.ThinkingConfig(
+                thinking_level=thinking_lvl,
+                include_thoughts=True,
+            ),
         }
         if json_mode:
             config_kwargs["response_mime_type"] = "application/json"
@@ -75,17 +81,37 @@ def generate_with_fallback(
         for attempt in range(2):
             try:
                 print(
-                    f"[gemini_helper] Calling {model_name} (thinking={thinking_lvl}, attempt {attempt + 1})...",
+                    f"[gemini_helper] Streaming {model_name} (thinking={thinking_lvl}, attempt {attempt + 1})...",
                     flush=True,
                 )
-                response = client.models.generate_content(
+                output_parts: list[str] = []
+                thought_chunks = 0
+                stream = client.models.generate_content_stream(
                     model=model_name,
                     contents=contents,
                     config=config,
                 )
-                text = response.text or ""
+                for chunk in stream:
+                    cands = getattr(chunk, "candidates", None) or []
+                    if not cands:
+                        continue
+                    content = getattr(cands[0], "content", None)
+                    parts = getattr(content, "parts", None) or []
+                    for part in parts:
+                        ptext = getattr(part, "text", None)
+                        if not ptext:
+                            continue
+                        if getattr(part, "thought", False):
+                            thought_chunks += 1
+                            if thought_chunks % 5 == 1:
+                                print("  [thinking...]", flush=True)
+                        else:
+                            output_parts.append(ptext)
+
+                text = "".join(output_parts)
                 if not text.strip():
-                    raise RuntimeError(f"Empty response from {model_name} ({thinking_lvl})")
+                    raise RuntimeError(f"Empty stream response from {model_name} ({thinking_lvl})")
+                print(f"[gemini_helper] Completed {model_name} ({len(text)} chars).", flush=True)
                 return clean_json_text(text) if json_mode else text
             except APIError as exc:
                 last_error = exc
