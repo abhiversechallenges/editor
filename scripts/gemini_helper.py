@@ -8,20 +8,25 @@ from google import genai
 from google.genai import types
 from google.genai.errors import APIError
 
-# Gemini 4 Hydrogen at HIGH thinking (Google's default: score 51 vs 54 at xhigh,
-# finishes in ~20-45s instead of xhigh's 10-21 minute hang per request)
-PRO_MODEL_CHAIN = [
-    ("gemini-4-hydrogen", "high"),
-    ("gemini-4-hydrogen", "medium"),
-    ("gemini-3.8-flash", "high"),
-    ("gemini-3.5-flash-lite", "high"),
+# Multi-pool Free Tier ladder (uses the exact same GEMINI_API_KEY):
+# (model_id, thinking_level_or_None, max_tokens, supports_json_mime)
+PRO_LADDER = [
+    ("gemini-4-hydrogen", "high", 65536, True),
+    ("gemini-4-hydrogen", "low", 65536, True),
+    ("gemini-3.8-flash", "low", 32768, True),
+    ("gemini-3.6-flash", None, 32768, True),
+    ("gemini-3.5-flash-lite", None, 32768, True),
+    ("gemini-3.1-flash-lite", None, 32768, True),
+    ("gemma-4-31b-it", None, 8192, False),
 ]
 
-FLASH_MODEL_CHAIN = [
-    ("gemini-4-hydrogen", "high"),
-    ("gemini-4-hydrogen", "medium"),
-    ("gemini-3.5-flash-lite", "high"),
-    ("gemini-3.8-flash", "high"),
+FLASH_LADDER = [
+    ("gemini-4-hydrogen", "high", 65536, True),
+    ("gemini-3.6-flash", None, 32768, True),
+    ("gemini-3.5-flash-lite", None, 32768, True),
+    ("gemini-3.1-flash-lite", None, 32768, True),
+    ("gemini-3.8-flash", "low", 32768, True),
+    ("gemma-4-31b-it", None, 8192, False),
 ]
 
 
@@ -33,7 +38,7 @@ def get_client() -> genai.Client:
         )
     return genai.Client(
         api_key=api_key,
-        http_options=types.HttpOptions(timeout=600_000),  # 10 min read timeout in ms
+        http_options=types.HttpOptions(timeout=600_000),
     )
 
 
@@ -61,57 +66,45 @@ def generate_with_fallback(
     max_output_tokens: int = 65536,
     temperature: float = 0.4,
 ) -> str:
-    chain = PRO_MODEL_CHAIN if role == "pro" else FLASH_MODEL_CHAIN
+    ladder = PRO_LADDER if role == "pro" else FLASH_LADDER
+    dead_models: set[str] = set()
     last_error: Optional[Exception] = None
 
-    for model_name, thinking_lvl in chain:
-        token_cap = 65536 if model_name.startswith("gemini-4") else max_output_tokens
-        config_kwargs: dict[str, Any] = {
-            "max_output_tokens": token_cap,
-            "thinking_config": types.ThinkingConfig(
-                thinking_level=thinking_lvl,
-                include_thoughts=True,
-            ),
-        }
-        if json_mode:
-            config_kwargs["response_mime_type"] = "application/json"
+    # 2 full passes over the 7-model ladder with a 20s cooldown between passes for 503 spikes
+    for pass_num in range(1, 3):
+        for model_name, thinking_lvl, cap, supports_json in ladder:
+            key = f"{model_name}:{thinking_lvl}"
+            if key in dead_models:
+                continue
 
-        config = types.GenerateContentConfig(**config_kwargs)
+            config_kwargs: dict[str, Any] = {
+                "max_output_tokens": min(cap, max_output_tokens) if cap < 65536 else cap,
+            }
+            if thinking_lvl:
+                config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_level=thinking_lvl)
+            if json_mode and supports_json:
+                config_kwargs["response_mime_type"] = "application/json"
 
-        for attempt in range(2):
+            final_contents = contents
+            if json_mode and not supports_json and isinstance(contents, str):
+                final_contents = contents + "\n\nCRITICAL: Return ONLY valid raw JSON with no markdown or extra commentary."
+
+            config = types.GenerateContentConfig(**config_kwargs)
+
             try:
                 print(
-                    f"[gemini_helper] Streaming {model_name} (thinking={thinking_lvl}, attempt {attempt + 1})...",
+                    f"[gemini_helper] Pass {pass_num} -> {model_name} (thinking={thinking_lvl or 'off'})...",
                     flush=True,
                 )
-                output_parts: list[str] = []
-                thought_chunks = 0
-                stream = client.models.generate_content_stream(
+                response = client.models.generate_content(
                     model=model_name,
-                    contents=contents,
+                    contents=final_contents,
                     config=config,
                 )
-                for chunk in stream:
-                    cands = getattr(chunk, "candidates", None) or []
-                    if not cands:
-                        continue
-                    content = getattr(cands[0], "content", None)
-                    parts = getattr(content, "parts", None) or []
-                    for part in parts:
-                        ptext = getattr(part, "text", None)
-                        if not ptext:
-                            continue
-                        if getattr(part, "thought", False):
-                            thought_chunks += 1
-                            if thought_chunks % 5 == 1:
-                                print("  [thinking...]", flush=True)
-                        else:
-                            output_parts.append(ptext)
-
-                text = "".join(output_parts)
+                text = response.text or ""
                 if not text.strip():
-                    raise RuntimeError(f"Empty stream response from {model_name} ({thinking_lvl})")
-                print(f"[gemini_helper] Completed {model_name} ({len(text)} chars).", flush=True)
+                    raise RuntimeError(f"Empty response from {model_name}")
+                print(f"[gemini_helper] Success with {model_name} ({len(text)} chars).", flush=True)
                 return clean_json_text(text) if json_mode else text
             except APIError as exc:
                 last_error = exc
@@ -120,18 +113,21 @@ def generate_with_fallback(
                     k in msg
                     for k in ("404", "403", "not found", "permission", "restricted", "limit: 0", "unsupported")
                 ):
-                    print(f"[gemini_helper] {model_name} ({thinking_lvl}) unavailable ({exc}); switching...", flush=True)
-                    break
-                if attempt == 0:
-                    print(f"[gemini_helper] {model_name} rate/transient error ({exc}); retrying in 8s...", flush=True)
-                    time.sleep(8)
+                    print(f"[gemini_helper] {model_name} unavailable on free key; skipping.", flush=True)
+                    dead_models.add(key)
+                    continue
+                print(f"[gemini_helper] {model_name} busy/rate-limited ({exc}); waiting 10s before next model...", flush=True)
+                time.sleep(10)
             except Exception as exc:
                 last_error = exc
-                if attempt == 0:
-                    print(f"[gemini_helper] {model_name} error ({exc}); retrying in 5s...", flush=True)
-                    time.sleep(5)
+                print(f"[gemini_helper] {model_name} error ({exc}); waiting 6s...", flush=True)
+                time.sleep(6)
 
-    raise RuntimeError(f"All Gemini models failed. Last error: {last_error}")
+        if pass_num == 1:
+            print("[gemini_helper] Pass 1 hit temporary demand spikes; cooling down 20s before Pass 2...", flush=True)
+            time.sleep(20)
+
+    raise RuntimeError(f"All Gemini/Gemma models failed. Last error: {last_error}")
 
 
 def parse_json_strict(raw: str) -> Any:
