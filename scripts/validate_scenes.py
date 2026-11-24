@@ -7,7 +7,7 @@ PLAN_PATH = ROOT / "work" / "scene_plan.json"
 SCENES_DIR = ROOT / "src" / "generated" / "scenes"
 TIMELINE_PATH = ROOT / "src" / "generated" / "GeneratedTimeline.tsx"
 
-FORBIDDEN_3D_TOKENS = ("<Text", "<Html", "<Sequence")
+FORBIDDEN_TOKENS = ("<div", "<span", "useFrame", "useEffect", "useState", "from 'three'", 'from "three"')
 
 
 def audit_plan(plan: Dict[str, Any]) -> List[str]:
@@ -23,40 +23,31 @@ def audit_plan(plan: Dict[str, Any]) -> List[str]:
             errors.append(f"Duplicate visualConcept detected: {concept}")
         seen_concepts.add(concept)
 
-        if idx > 0 and abs(float(sc["startSec"]) - float(scenes[idx - 1]["endSec"])) > 0.01:
-            errors.append(f"Timeline discontinuity between {scenes[idx-1]['id']} and {sc['id']}.")
+        if idx > 0:
+            prev = scenes[idx - 1]
+            if abs(float(sc["startSec"]) - float(prev["endSec"])) > 0.01:
+                errors.append(f"Timeline gap between {prev['id']} and {sc['id']}.")
+            if sc["backdropTheme"] == prev["backdropTheme"] and sc["backdropTheme"] != "black_title_card":
+                errors.append(f"Consecutive identical backdropTheme '{sc['backdropTheme']}' at {sc['id']}.")
 
-        beats = sc.get("beats") or []
-        if len(beats) < 2:
-            errors.append(f"{sc['id']} has fewer than 2 micro-beats (visual hold too static).")
-
-        for b in beats:
-            b_dur = float(b["endSec"]) - float(b["startSec"])
-            if b_dur > 5.5:
-                errors.append(f"{b['id']} hold duration {b_dur:.2f}s exceeds 5.5s max beat pace.")
+        dur = float(sc["endSec"]) - float(sc["startSec"])
+        if dur > 9.5:
+            errors.append(f"{sc['id']} duration {dur:.2f}s exceeds 9.5s max hold.")
 
         cname = sc.get("componentName")
         if not (SCENES_DIR / f"{cname}.tsx").exists():
             errors.append(f"Missing generated scene component: {cname}.tsx")
 
-    subtitles = plan.get("subtitleChunks") or []
-    for i in range(len(subtitles) - 1):
-        if float(subtitles[i]["endSec"]) > float(subtitles[i + 1]["startSec"]):
-            errors.append(f"Overlapping subtitleChunks at index {i} ({subtitles[i]['endSec']} > {subtitles[i+1]['startSec']}).")
-
     return errors
 
 
-def audit_3d_files() -> List[str]:
+def audit_source_files() -> List[str]:
     errors: List[str] = []
-    files = list(SCENES_DIR.glob("Scene_*.tsx")) + [TIMELINE_PATH]
-    for f in files:
-        if not f.exists():
-            continue
+    for f in list(SCENES_DIR.glob("Scene_*.tsx")):
         txt = f.read_text(encoding="utf-8")
-        for m in FORBIDDEN_3D_TOKENS:
-            if m in txt:
-                errors.append(f"Forbidden token '{m}' found inside {f.name}")
+        for tok in FORBIDDEN_TOKENS:
+            if tok in txt:
+                errors.append(f"Forbidden token '{tok}' inside {f.name}")
     return errors
 
 
@@ -64,11 +55,10 @@ def main() -> None:
     if not PLAN_PATH.exists():
         raise SystemExit("Missing work/scene_plan.json")
     plan = json.loads(PLAN_PATH.read_text(encoding="utf-8"))
-    errs = audit_plan(plan) + audit_3d_files()
+    errs = audit_plan(plan) + audit_source_files()
     if errs:
         raise SystemExit("[validate_scenes] FAILED:\n - " + "\n - ".join(errs))
-    total_beats = sum(len(s.get("beats", [])) for s in plan["scenes"])
-    print(f"[validate_scenes] PASSED: {len(plan['scenes'])} scenes, {total_beats} visual beats, zero overlaps.")
+    print(f"[validate_scenes] PASSED: {len(plan['scenes'])} unique continuous 2D cartoon scenes.")
 
 
 if __name__ == "__main__":

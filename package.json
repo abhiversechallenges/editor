@@ -1,29 +1,24 @@
 {
-  "name": "infraverse-dynamic-3d-factory",
-  "version": "3.1.0",
+  "name": "infraverse-2d-cartoon-factory",
+  "version": "4.0.0",
   "private": true,
-  "description": "High-contrast CAD 3D + 2D Remotion HUD engineering documentary factory",
+  "description": "Video-1 style 2D vector cartoon & motion graphics documentary factory",
   "scripts": {
     "dev": "remotion studio src/index.ts",
     "build": "remotion bundle src/index.ts --public-dir public --out-dir build_bundle",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@react-three/drei": "9.120.4",
-    "@react-three/fiber": "8.17.10",
     "@remotion/cli": "4.0.543",
     "@remotion/google-fonts": "4.0.543",
-    "@remotion/three": "4.0.543",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "remotion": "4.0.543",
-    "three": "0.170.0"
+    "remotion": "4.0.543"
   },
   "devDependencies": {
     "@types/node": "22.13.0",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
-    "@types/three": "0.170.0",
     "typescript": "5.6.3"
   }
 }

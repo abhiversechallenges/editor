@@ -1,1 +1,13 @@
-# Upload your long voiceover.mp3 + visuals.txt inside input/ for a 16:9 (1920x1080) video!
+# Control environments & visuals in plain English while keeping the unified 2D cartoon look!
+# Available environment moods:
+# night_mountains, sunset_horizon, daylight_city, graph_paper, notebook_lined,
+# world_map, warm_office, steel_vault, dark_industrial, news_document, split_3panel, black_title_card
+
+Example for Week 1 ($100B AI Data Center):
+- Start on night_mountains: Cartoon CEO sweating while holding up a huge glowing cracking AI chip, handwritten "$100B" callout.
+- Quick black_title_card: "Nobody noticed."
+- Cut to split_3panel daylight comic: Bank building, Power substation, City street with skyline.
+- Cut to graph_paper: Rising red power demand line chart going from 100 MW to 1,000 MW with city skyline below.
+- Cut to dark_industrial: Server corridor with blinking racks and conveyor belt stamping 2024 -> 2025 -> 2026 chips.
+- Cut to warm_office: Engineering report quote with yellow highlighter sweeping "LIQUID COOLING REQUIRED" and red circle.
+- Cut to steel_vault / sunset_horizon: Nuclear SMR reactor vessel + cooling towers + battery containers powering the grid.

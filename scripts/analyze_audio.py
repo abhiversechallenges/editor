@@ -134,7 +134,7 @@ def transcribe_audio(wav_path: Path) -> Dict[str, Any]:
 
 
 def analyze_beats(wav_path: Path) -> Dict[str, Any]:
-    print("[analyze_audio] Detecting vocal emphasis peaks & tempo...")
+    print("[analyze_audio] Detecting vocal emphasis peaks & pauses...")
     y, sr = librosa.load(str(wav_path), sr=22050, mono=True)
     duration_sec = float(librosa.get_duration(y=y, sr=sr))
 
@@ -146,7 +146,7 @@ def analyze_beats(wav_path: Path) -> Dict[str, Any]:
     onset_norm = onset_env / (np.max(onset_env) + 1e-8)
     combined = 0.65 * rms_norm + 0.35 * onset_norm
 
-    min_distance = int((2.0 * sr) / hop_length)
+    min_distance = int((1.8 * sr) / hop_length)
     peaks, _ = find_peaks(
         combined,
         height=float(np.percentile(combined, 68)),
@@ -156,9 +156,9 @@ def analyze_beats(wav_path: Path) -> Dict[str, Any]:
     peak_times = [round(float(librosa.frames_to_time(p, sr=sr, hop_length=hop_length)), 3) for p in peaks]
 
     tempo, _ = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr, hop_length=hop_length)
-    bpm_val = float(np.atleast_1d(tempo)[0]) if np.size(tempo) > 0 else 102.0
+    bpm_val = float(np.atleast_1d(tempo)[0]) if np.size(tempo) > 0 else 104.0
     if bpm_val < 70 or bpm_val > 135:
-        bpm_val = 102.0
+        bpm_val = 104.0
 
     return {
         "duration_sec": round(duration_sec, 3),

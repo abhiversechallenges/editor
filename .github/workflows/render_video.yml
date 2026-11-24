@@ -23,6 +23,14 @@ on:
         options:
           - "1080p_30fps"
           - "720p_24fps"
+      include_bgm:
+        description: "Include auto background music? (false = pure voice + SFX so you can add YT Audio Library music)"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
       force_workers:
         description: "Parallel workers (auto = 1 for <90s, 4 for 2-5m, 6 for 6m+)"
         required: false
@@ -113,7 +121,7 @@ jobs:
           npm install --no-audit --no-fund
           npx remotion browser ensure
 
-      - name: Step 1 - Audio Clean & Word-Level Whisper Timestamps
+      - name: Step 1 - Audio Clean & Word-Level Whisper Sync
         if: steps.check_input.outputs.has_input == 'true'
         env:
           INPUT_FOLDER: "input"
@@ -123,7 +131,7 @@ jobs:
         run: |
           python scripts/analyze_audio.py
 
-      - name: Step 2 - Gemini Multi-Part 3D & HUD Scene Coder
+      - name: Step 2 - Gemini 2D Cartoon Storyboard, Scene Illustrator & Self-Healer
         if: steps.check_input.outputs.has_input == 'true'
         env:
           INPUT_FOLDER: "input"
@@ -133,20 +141,22 @@ jobs:
         run: |
           python scripts/generate_scenes.py
 
-      - name: Step 3 - Validate Uniqueness, Beats & Zero Overlaps
+      - name: Step 3 - Audit Zero Repetition & Continuous Flow
         if: steps.check_input.outputs.has_input == 'true'
         run: |
           python scripts/validate_scenes.py
 
-      - name: Step 4 - Synthesize & Duck Master Documentary Audio
+      - name: Step 4 - Synthesize & Sync SFX + Underscore Audio
         if: steps.check_input.outputs.has_input == 'true'
+        env:
+          INCLUDE_BGM: ${{ github.event.inputs.include_bgm || 'true' }}
         run: |
           python scripts/mix_audio.py
 
-      - name: Step 5 - Frame 0 Smoke Test & Bundle Project Once
+      - name: Step 5 - Frame 0 Smoke Test & Bundle Once
         if: steps.check_input.outputs.has_input == 'true'
         run: |
-          npx remotion still src/index.ts Main work/frame0_smoke.png --frame=0 --gl=swangle
+          npx remotion still src/index.ts Main work/frame0_smoke.png --frame=0
           npx remotion bundle src/index.ts --public-dir public --out-dir build_bundle
 
       - name: Step 6 - Plan Adaptive Parallel Workers (1 / 4 / 6)
@@ -157,7 +167,7 @@ jobs:
         run: |
           python scripts/plan_chunks.py
 
-      - name: Upload Prepared Bundle & Master Audio
+      - name: Upload Prepared Bundle & Audio
         if: steps.check_input.outputs.has_input == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -174,7 +184,7 @@ jobs:
     needs: plan_and_prepare
     if: needs.plan_and_prepare.outputs.has_input == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -209,7 +219,7 @@ jobs:
           npm install --no-audit --no-fund
           npx remotion browser ensure
 
-      - name: Render Silent 3D + HUD Chunk ${{ matrix.chunk.idx }}
+      - name: Render 2D Cartoon Chunk ${{ matrix.chunk.idx }}
         run: |
           mkdir -p out
           npx remotion render build_bundle Main out/chunk_${{ matrix.chunk.idx }}.mp4 \
@@ -218,11 +228,10 @@ jobs:
             --concurrency=3 \
             --codec=h264 \
             --pixel-format=yuv420p \
-            --crf=22 \
+            --crf=21 \
             --x264-preset=veryfast \
             --image-format=jpeg \
-            --jpeg-quality=90 \
-            --gl=swangle
+            --jpeg-quality=92
 
       - name: Upload Rendered Chunk ${{ matrix.chunk.idx }}
         uses: actions/upload-artifact@v4
@@ -263,13 +272,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      - name: Seamlessly Join Video Chunks + Master Audio
+      - name: Join Chunks + Master Audio
         env:
           VIDEO_FORMAT: "long_16_9"
         run: |
           python scripts/stitch_chunks.py
 
-      - name: Upload Final 16:9 Video
+      - name: Upload Final 16:9 2D Video
         uses: actions/upload-artifact@v4
         with:
           name: InfraVerse-Long-16-9

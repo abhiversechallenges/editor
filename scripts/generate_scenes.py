@@ -12,113 +12,99 @@ from gemini_helper import clean_tsx_text, generate_with_fallback, get_client, pa
 
 ROOT = Path(__file__).resolve().parent.parent
 WORK_DIR = ROOT / "work"
-MODELS_DIR = ROOT / "public" / "models"
 GENERATED_DIR = ROOT / "src" / "generated"
 SCENES_DIR = GENERATED_DIR / "scenes"
 
-STUDIO_KIT_API_DOC = """
-Available components in "../../components/StudioKit" (and ONLY these imports are allowed):
+BACKDROP_THEMES = [
+    "night_mountains",
+    "sunset_horizon",
+    "daylight_city",
+    "graph_paper",
+    "notebook_lined",
+    "world_map",
+    "warm_office",
+    "steel_vault",
+    "dark_industrial",
+    "news_document",
+    "split_3panel",
+    "black_title_card",
+]
+
+CAMERA_MOVES = [
+    "push_in",
+    "pull_out",
+    "pan_right",
+    "pan_left",
+    "pan_up",
+    "shake_hit",
+]
+
+TRANSITIONS = [
+    "slide_left",
+    "slide_up",
+    "wipe_right",
+    "zoom_dissolve",
+    "flash_cut",
+]
+
+SFX_CUES = ["whoosh", "pop_snap", "marker_swipe", "sub_impact", "tick"]
+
+CARTOON_KIT_DOC = """
+Available components in "../../components/CartoonKit2D" (ONLY import React, CartoonKit2D, and Scene2DProps):
 import React from "react";
 import {
-  MatteBox, MatteCylinder, MatteSphere, MatteTorus, MatteCone,
-  HardwareRack, FinnedHousing, PipeConduit, HeatSinkArray, GlassShell,
-  DataHallBuilding, CitySkylineBlock, PowerPylon, CoolingTower, BatteryContainer,
-  SpinGroup, BobGroup, RevealSlideGroup, FlowStream, RisingParticles, OrbitRing, GlbModel
-} from "../../components/StudioKit";
-import type { DynamicSceneProps } from "../../types";
+  SceneBackdrop2D, Camera2D, CartoonCharacter2D, TitleCard2D,
+  InkCallout2D, LineChart2D, BarChart2D, PieChart2D, BalanceScale2D,
+  ConveyorBelt2D, WorldMapArc2D, QuoteHighlight2D, CalendarFlip2D, Stopwatch2D,
+  SplitScreen3Panel, ReactorVessel2D, CoolingTower2D, ServerRack2D,
+  Microchip2D, PowerPylon2D, BatteryBank2D, AnimatedPipe2D, ExplosionBurst2D
+} from "../../components/CartoonKit2D";
+import type { Scene2DProps } from "../../types";
 
-Props Reference (type V3 = [number, number, number]):
-- DynamicSceneProps: { frame: number; localFrame: number; progress: number; accentHex: string }
-- DataHallBuilding: { pos?: V3; size?: V3; accentHex?: string; progress: number; frame: number }
-  (Concrete-walled data center hall with structural pilasters & sliding cutaway roof revealing server racks inside!)
-- CitySkylineBlock: { pos?: V3; scale?: number; accentHex?: string; frame: number }
-  (Cluster of 11 varied skyscrapers with lit glowing windows — use whenever city/grid power is mentioned!)
-- PowerPylon: { pos?: V3; height?: number; accentHex?: string }
-  (Tapered steel transmission lattice tower with cross-arms and HV insulators)
-- CoolingTower: { pos?: V3; radius?: number; height?: number; accentHex?: string; cutaway?: boolean; frame: number }
-  (Tapered hyperbolic concrete cooling tower with spinning intake fan, blue water basin & rising vapor!)
-- BatteryContainer: { pos?: V3; size?: V3; accentHex?: string; frame: number }
-  (Utility Megapack battery container with side vents, HVAC pod & animated emerald/cyan charge bar!)
-- HardwareRack: { pos?: V3; rot?: V3; size?: V3; bays?: number; accentHex?: string; frame: number }
-- FinnedHousing: { pos?: V3; rot?: V3; radius?: number; height?: number; finCount?: number; color?: string; accentHex?: string; cutaway?: boolean; frame: number }
-- PipeConduit: { points: V3[]; tubeRadius?: number; pipeColor?: string; fluidColor?: string; flangeCount?: number; count?: number; speed?: number; frame: number }
-- HeatSinkArray: { pos?: V3; rot?: V3; size?: V3; finCount?: number; color?: string; pipeColor?: string; glowColor?: string }
-- GlassShell: { pos?: V3; rot?: V3; shape?: "box"|"cylinder"; size?: V3; radius?: number; height?: number; color?: string; edgeColor?: string; opacity?: number }
-- MatteBox / MatteCylinder / MatteSphere / MatteTorus / MatteCone
-- SpinGroup / BobGroup / RevealSlideGroup / FlowStream / RisingParticles / OrbitRing / GlbModel
+Props Reference (Coordinates operate inside a clean 1920x1080 SVG stage! Even on 9:16 Shorts, the camera frames smoothly, or use `isVertical` prop to stack vertically!):
+- Scene2DProps: { frame: number; localFrame: number; localTime: number; durationSec: number; progress: number; peakTimes: number[]; accentHex: string; backdropTheme: BackdropTheme; cameraMove: CameraMove2D; isVertical: boolean }
+- SceneBackdrop2D: { theme: BackdropTheme; frame: number; accentHex?: string }
+  (Always render SceneBackdrop2D first!)
+- Camera2D: { move: CameraMove2D; progress: number; frame: number; peakTimes?: number[]; localTime: number; children?: React.ReactNode }
+  (Wrap foreground visual content inside Camera2D so there is ALWAYS smooth continuous camera motion and punchy micro-shakes on vocal peaks!)
+- CartoonCharacter2D: { x: number; y: number; scale?: number; variant?: "ceo"|"engineer"|"worker"|"suit"|"operator"; mood?: "neutral"|"shocked"|"worried"|"happy"|"smug"|"angry"; pose?: "stand"|"point_right"|"point_up"|"hold_up"|"hands_head"|"celebrate"; glasses?: boolean; hardHat?: boolean; sweatDrop?: boolean; flip?: boolean; frame: number }
+- TitleCard2D: { text: string; progress: number; accentHex?: string }
+  (Use ONLY when theme is "black_title_card" — handwritten white Caveat marker text!)
+- InkCallout2D: { x: number; y: number; text: string; color?: string; fontSize?: number; delaySec?: number; localTime: number; rotateDeg?: number; arrowTo?: [number, number] }
+- LineChart2D: { x: number; y: number; w?: number; h?: number; label?: string; startVal?: number; endVal?: number; prefix?: string; suffix?: string; decimals?: number; color?: string; points?: number[]; progress: number }
+- BarChart2D: { x: number; y: number; w?: number; h?: number; bars: { label: string; value: number; color?: string }[]; multiplierTag?: string; suffix?: string; prefix?: string; progress: number }
+- PieChart2D: { x: number; y: number; radius?: number; slicePct: number; label: string; color?: string; progress: number }
+- BalanceScale2D: { x: number; y: number; leftLabel: string; rightLabel: string; tiltDeg?: number; leftColor?: string; rightColor?: string; progress: number }
+- ConveyorBelt2D: { x: number; y: number; w?: number; items: string[]; accentHex?: string; frame: number; progress: number }
+- WorldMapArc2D: { x: number; y: number; w?: number; h?: number; startPct?: [number, number]; endPct?: [number, number]; accentHex?: string; zoomLabel?: string; progress: number; frame: number }
+- QuoteHighlight2D: { x: number; y: number; w?: number; sourceTag: string; quoteBefore: string; highlightText: string; quoteAfter?: string; markStamp?: string; progress: number }
+- CalendarFlip2D: { x: number; y: number; pages: { month: string; day: string }[]; progress: number }
+- Stopwatch2D: { x: number; y: number; radius?: number; maxSecLabel?: string; progress: number }
+- SplitScreen3Panel: { progress: number; panel1: React.ReactNode; panel2: React.ReactNode; panel3: React.ReactNode }
+  (Reveals Panel 1 -> Panel 2 -> Panel 3 sequentially across progress 0..0.7 — use inside 1920x1080 viewBox!)
+- ReactorVessel2D: { x: number; y: number; scale?: number; accentHex?: string; frame: number; progress: number }
+- CoolingTower2D: { x: number; y: number; scale?: number; accentHex?: string; frame: number }
+- ServerRack2D: { x: number; y: number; scale?: number; accentHex?: string; frame: number }
+- Microchip2D: { x: number; y: number; scale?: number; color?: string; cracked?: boolean; overheating?: boolean; frame: number; progress: number }
+- PowerPylon2D: { x: number; y: number; scale?: number; accentHex?: string; frame: number }
+- BatteryBank2D: { x: number; y: number; scale?: number; accentHex?: string; frame: number; progress: number }
+- AnimatedPipe2D: { d: string; color?: string; fluidColor?: string; strokeWidth?: number; frame: number }
+  (Bold ink-outlined curved SVG pipe with dashed glowing fluid moving continuously!)
+- ExplosionBurst2D: { x: number; y: number; color?: string; triggerSec: number; localTime: number }
 
-STRICT HARDWARE & LITERAL VISUAL MATCHING RULES:
-1. Export EXACTLY `export const Scene_XX: React.FC<DynamicSceneProps> = ({ frame, localFrame, progress, accentHex }) => { ... }`.
-2. NEVER import `three`, `@react-three/fiber`, `remotion`, `useFrame`, `useState`, `useEffect`, or `<Text>` / `<Html>`.
-3. LITERALLY MATCH SPOKEN NOUNS:
-   - Concrete walls / data hall / roof cutaway -> use `DataHallBuilding`!
-   - City / electricity powering a city -> use `CitySkylineBlock` + `PowerPylon` + `PipeConduit`!
-   - Server racks / aisle -> use rows of `HardwareRack` + overhead `PipeConduit`!
-   - Chips / cold plates / heatsinks -> use `HeatSinkArray` + `PipeConduit` + `GlassShell`!
-   - Cooling towers / steam -> use `CoolingTower`!
-   - Nuclear reactor / turbine -> use `FinnedHousing` (`cutaway={true}`) + `SpinGroup` rotors + `PipeConduit`!
-   - Substations / batteries -> use `PowerPylon` + `BatteryContainer` + `PipeConduit`!
-4. Keep hero geometry compact around `[0, 0, 0]` (`X/Z` within `[-3.2 .. +3.2]`, base resting cleanly at `Y = -1.2`) so close camera angles frame it huge (60-70% of screen).
+STRICT RULES FOR SCENE COMPONENTS:
+1. Export EXACTLY `export const Scene_XX: React.FC<Scene2DProps> = (props) => { ... }`.
+2. Return a single `<svg viewBox="0 0 1920 1080" style={{ width: "100%", height: "100%", display: "block" }}>` (or if `isVertical`, compose cleanly inside `viewBox="0 0 1080 1920"` when building vertical, OR use `isVertical` to adjust positions! Even simpler: render `<SceneBackdrop2D theme={props.backdropTheme} frame={props.frame} accentHex={props.accentHex} />` and `<Camera2D move={props.cameraMove} progress={props.progress} frame={props.frame} peakTimes={props.peakTimes} localTime={props.localTime}>` inside an `<svg viewBox={props.isVertical ? "0 0 1080 1920" : "0 0 1920 1080"} style={{ width: "100%", height: "100%", display: "block" }}>`!).
+   CRITICAL: Notice `SceneBackdrop2D` and `Camera2D` return SVG `<g>` elements! Everything inside `<svg>` MUST be valid SVG (`<g>`, `<rect>`, `<circle>`, `<path>`, `<line>`, `<polygon>`, `<text>`) or `CartoonKit2D` components! NEVER put `<div>` inside `<svg>`!
+3. NEVER import `three`, `@react-three`, `remotion`, `useFrame`, `useEffect`, or `useState`.
+4. NEVER use hardcoded `id="..."` on `<linearGradient>` or `<clipPath>` inside generated scenes (use solid/rgba colors + bold `#111827` `strokeWidth={5}` black outlines for crisp Video 1 ink style!).
+5. NO bottom subtitle boxes! Use `InkCallout2D`, `QuoteHighlight2D`, `TitleCard2D`, charts, and expressive characters synced to `localTime` & `peakTimes`.
+6. EVERY scene MUST be alive on every frame (character blinking/moving, pipes flowing, charts drawing, clouds/stars moving, camera moving).
 """
 
-PALETTES = [
-    {"bgHex": "#101B2E", "accentHex": "#22D3EE"},
-    {"bgHex": "#13223A", "accentHex": "#38BDF8"},
-    {"bgHex": "#20161F", "accentHex": "#F97316"},
-    {"bgHex": "#102430", "accentHex": "#06B6D4"},
-    {"bgHex": "#13253E", "accentHex": "#60A5FA"},
-    {"bgHex": "#1F1912", "accentHex": "#F59E0B"},
-    {"bgHex": "#102822", "accentHex": "#10B981"},
-    {"bgHex": "#191732", "accentHex": "#818CF8"},
-]
-
-# Tighter, lower-pitch camera presets so 3D hardware fills 60-70% of the screen cleanly (zero top void!)
-BEAT_CAM_PRESETS_16_9 = [
-    [
-        {"offset": [3.8, 2.0, 4.3], "lookOffset": [0.0, 0.35, 0.0]},
-        {"offset": [1.6, 1.3, 3.0], "lookOffset": [0.15, 0.25, 0.0]},
-        {"offset": [-2.7, 1.7, 3.4], "lookOffset": [-0.1, 0.2, 0.0]},
-    ],
-    [
-        {"offset": [-3.6, 1.9, 4.1], "lookOffset": [0.0, 0.3, 0.0]},
-        {"offset": [-1.0, 1.1, 2.8], "lookOffset": [0.0, 0.3, 0.0]},
-        {"offset": [2.9, 1.6, 3.3], "lookOffset": [0.1, 0.2, 0.0]},
-    ],
-    [
-        {"offset": [0.6, 2.9, 4.4], "lookOffset": [0.0, 0.2, 0.0]},
-        {"offset": [2.8, 1.3, 2.9], "lookOffset": [0.0, 0.3, 0.0]},
-        {"offset": [-1.9, 1.0, 2.8], "lookOffset": [0.0, 0.25, 0.0]},
-    ],
-]
-
-BEAT_CAM_PRESETS_9_16 = [
-    [
-        {"offset": [3.7, 2.3, 4.9], "lookOffset": [0.0, 0.35, 0.0]},
-        {"offset": [1.1, 1.4, 3.6], "lookOffset": [0.0, 0.3, 0.0]},
-        {"offset": [-2.4, 1.8, 4.0], "lookOffset": [0.0, 0.2, 0.0]},
-    ],
-    [
-        {"offset": [-3.5, 2.1, 4.8], "lookOffset": [0.0, 0.3, 0.0]},
-        {"offset": [-0.8, 1.2, 3.5], "lookOffset": [0.0, 0.3, 0.0]},
-        {"offset": [2.5, 1.7, 3.9], "lookOffset": [0.0, 0.2, 0.0]},
-    ],
-]
-
-HIGHLIGHT_KEYWORDS = {
-    "ai", "gpu", "gpus", "nvidia", "blackwell", "nvlink", "infiniband", "chip", "chips",
-    "silicon", "die", "liquid", "cooling", "coolant", "copper", "water", "watts", "megawatts",
-    "gigawatts", "mw", "kw", "gw", "kv", "nuclear", "reactor", "reactors", "smr", "uranium",
-    "substation", "substations", "transformer", "transformers", "grid", "blackout", "battery",
-    "batteries", "megapack", "fiber", "subsea", "cable", "cables", "heat", "thermal",
-    "overheat", "overheats", "billion", "billions", "hundred", "thousand", "trillions", "data",
-    "center", "supercluster", "power", "electricity", "towers", "manifolds", "turbine",
-}
-
-DANGLING_END_WORDS = {"a", "an", "the", "to", "of", "in", "on", "at", "for", "with", "and", "or", "by", "as", "from", "into"}
-
 FORBIDDEN_CODE_PATTERNS = (
-    "<Text",
-    "<Html",
+    "<div",
+    "<span",
     "useFrame",
     "useEffect",
     "useState",
@@ -163,37 +149,31 @@ def load_visuals_prompt(input_dir: Path) -> str:
     return max(candidates, key=git_ts).read_text(encoding="utf-8").strip()
 
 
-def discover_custom_models() -> List[str]:
-    if not MODELS_DIR.exists():
-        return []
-    return sorted(p.name for p in MODELS_DIR.iterdir() if p.is_file() and p.suffix.lower() in {".glb", ".gltf"})
-
-
 def compute_scene_range(duration_sec: float, is_short: bool) -> tuple[int, int]:
     if is_short:
-        if duration_sec <= 22:
-            return 3, 5
+        if duration_sec <= 20:
+            return 4, 6
         if duration_sec <= 40:
-            return 5, 7
-        return 7, 10
+            return 6, 9
+        return 8, 12
     if duration_sec <= 25:
-        return 3, 4
+        return 4, 6
     if duration_sec <= 65:
-        return 6, 9
+        return 10, 14
     if duration_sec <= 150:
-        return 13, 17
+        return 18, 25
     if duration_sec <= 360:
-        return 22, 32
-    return 36, 48
+        return 34, 48
+    return 52, 72
 
 
-def snap_to_peak(target: float, peaks: List[float], min_val: float, max_val: float) -> float:
+def snap_to_boundary(target: float, boundaries: List[float], min_val: float, max_val: float) -> float:
     best = target
-    best_dist = 0.55
-    for p in peaks:
-        d = abs(p - target)
-        if d <= best_dist and min_val < p < max_val:
-            best = p
+    best_dist = 0.6
+    for b in boundaries:
+        d = abs(b - target)
+        if d <= best_dist and min_val < b < max_val:
+            best = b
             best_dist = d
     return round(best, 3)
 
@@ -204,172 +184,67 @@ def sanitize_hex(val: Any, fallback: str) -> str:
     return fallback
 
 
-def infer_decimals(val: float) -> int:
-    s = f"{val:.4f}".rstrip("0").rstrip(".")
-    return len(s.split(".")[1]) if "." in s else 0
+def build_safe_fallback_scene_tsx(
+    scene_num: int,
+    backdrop: str,
+    accent: str,
+    concept: str,
+    title_text: str,
+) -> str:
+    safe_comment = re.sub(r"[^A-Za-z0-9 ,.-]", "", concept)[:60]
+    safe_title = json.dumps(title_text or concept[:28])
+    variant = scene_num % 6
 
-
-def clean_word_boundary_label(raw_label: str, max_chars: int = 34) -> str:
-    words = raw_label.strip().upper().split()
-    out: List[str] = []
-    cur_len = 0
-    for w in words:
-        add_len = len(w) + (1 if out else 0)
-        if cur_len + add_len <= max_chars:
-            out.append(w)
-            cur_len += add_len
-        else:
-            break
-    if not out and words:
-        return words[0][:max_chars]
-    return " ".join(out)
-
-
-def clean_whisper_tokens(raw_words: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Merge Whisper hyphen artifacts (e.g. 'high' + '-speed' -> 'high-speed', 'copper' + '-cold' -> 'copper cold')
-    and fix common split compound typos ('over' + 'heats' -> 'overheats').
-    """
-    cleaned: List[Dict[str, Any]] = []
-    for w in raw_words:
-        txt = str(w.get("word", "")).strip()
-        if not txt:
-            continue
-        start = float(w["start"])
-        end = float(w["end"])
-        low = txt.lower()
-
-        if cleaned and txt.startswith("-"):
-            prev_low = cleaned[-1]["word"].lower()
-            if prev_low == "copper" and low == "-cold":
-                cleaned[-1]["word"] = "copper"
-                cleaned.append({"word": "cold", "start": start, "end": end})
-            else:
-                cleaned[-1]["word"] = cleaned[-1]["word"] + txt
-                cleaned[-1]["end"] = max(cleaned[-1]["end"], end)
-            continue
-
-        if cleaned and cleaned[-1]["word"].lower() == "over" and low.startswith("heat"):
-            cleaned[-1]["word"] = "over" + txt
-            cleaned[-1]["end"] = max(cleaned[-1]["end"], end)
-            continue
-
-        cleaned.append({"word": txt, "start": start, "end": end})
-    return cleaned
-
-
-def build_subtitle_chunks(words: List[Dict[str, Any]], total_dur: float) -> List[Dict[str, Any]]:
-    tokens = clean_whisper_tokens(words)
-    chunks: List[Dict[str, Any]] = []
-    if not tokens:
-        return chunks
-
-    buf: List[Dict[str, Any]] = []
-    for idx, tok in enumerate(tokens):
-        buf.append(tok)
-        txt = tok["word"]
-        low = re.sub(r"[^a-z]", "", txt.lower())
-        ends_punct = txt.endswith((".", "!", "?", ","))
-        next_gap = (tokens[idx + 1]["start"] - tok["end"]) if idx + 1 < len(tokens) else 1.0
-        next_is_last = idx + 1 == len(tokens) - 1
-
-        should_split = False
-        if next_is_last and len(buf) >= 3:
-            should_split = False
-        elif ends_punct and len(buf) >= 2:
-            should_split = True
-        elif next_gap > 0.24 and len(buf) >= 2:
-            should_split = True
-        elif len(buf) >= 4 and low not in DANGLING_END_WORDS:
-            should_split = True
-        elif len(buf) >= 6:
-            should_split = True
-
-        if should_split:
-            chunk_words = []
-            for item in buf:
-                clean_tok = re.sub(r"[^a-z0-9$%]", "", item["word"].lower())
-                is_hi = bool(re.search(r"\d", clean_tok)) or clean_tok in HIGHLIGHT_KEYWORDS
-                chunk_words.append({"text": item["word"], "highlight": is_hi})
-            chunks.append(
-                {
-                    "startSec": round(buf[0]["start"], 3),
-                    "endSec": round(min(total_dur, buf[-1]["end"] + 0.08), 3),
-                    "words": chunk_words,
-                }
-            )
-            buf = []
-
-    if buf:
-        chunk_words = []
-        for item in buf:
-            clean_tok = re.sub(r"[^a-z0-9$%]", "", item["word"].lower())
-            is_hi = bool(re.search(r"\d", clean_tok)) or clean_tok in HIGHLIGHT_KEYWORDS
-            chunk_words.append({"text": item["word"], "highlight": is_hi})
-        chunks.append(
-            {
-                "startSec": round(buf[0]["start"], 3),
-                "endSec": round(min(total_dur, buf[-1]["end"] + 0.15), 3),
-                "words": chunk_words,
-            }
-        )
-
-    # Guarantee strictly non-overlapping sequential subtitle chunks!
-    for i in range(len(chunks) - 1):
-        curr = chunks[i]
-        nxt = chunks[i + 1]
-        if curr["endSec"] >= nxt["startSec"] - 0.015:
-            mid = round((curr["endSec"] + nxt["startSec"]) * 0.5, 3)
-            curr["endSec"] = max(round(curr["startSec"] + 0.08, 3), round(nxt["startSec"] - 0.02, 3))
-            if nxt["startSec"] <= curr["endSec"]:
-                nxt["startSec"] = round(curr["endSec"] + 0.02, 3)
-                if nxt["endSec"] <= nxt["startSec"]:
-                    nxt["endSec"] = round(nxt["startSec"] + 0.15, 3)
-        _ = mid if False else None
-
-    return chunks
-
-
-def build_safe_fallback_scene_tsx(scene_num: int, accent_hex: str, title: str) -> str:
-    variant = scene_num % 4
-    safe_comment = re.sub(r"[^A-Za-z0-9 ,.-]", "", title)[:60]
-    if variant == 0:
-        body = f"""
-      <DataHallBuilding pos={{[-0.7, 0, 0]}} size={{[3.0, 1.5, 2.2]}} accentHex={{"{accent_hex}"}} progress={{progress}} frame={{frame}} />
-      <CitySkylineBlock pos={{[2.1, -0.3, 0.2]}} scale={{0.85}} accentHex="#F59E0B" frame={{frame}} />
-      <PipeConduit points={{[[-0.7, -0.8, 0.9], [0.8, -0.8, 0.6], [2.0, -0.8, 0.2]]}} fluidColor={{"{accent_hex}"}} flangeCount={{3}} speed={{0.85}} frame={{frame}} />"""
+    if backdrop == "black_title_card":
+        inner = f"""
+      <TitleCard2D text={{{safe_title}}} progress={{progress}} accentHex={{"{accent}"}} />"""
+    elif variant == 0:
+        inner = f"""
+      <ReactorVessel2D x={{isVertical ? 540 : 620}} y={{isVertical ? 840 : 570}} scale={{1.25}} accentHex={{"{accent}"}} frame={{frame}} progress={{progress}} />
+      <CartoonCharacter2D x={{isVertical ? 280 : 1280}} y={{isVertical ? 1280 : 720}} scale={{1.15}} variant="engineer" mood="worried" hardHat={{true}} sweatDrop={{true}} pose="point_right" flip={{true}} frame={{frame}} />
+      <InkCallout2D x={{isVertical ? 540 : 1240}} y={{isVertical ? 320 : 280}} text="CORE HEAT" color={{"{accent}"}} localTime={{localTime}} delaySec={{0.2}} />"""
     elif variant == 1:
-        body = f"""
-      <MatteBox pos={{[0, -1.1, 0]}} size={{[4.8, 0.2, 3.6]}} color="#2D3E58" />
-      <HardwareRack pos={{[-1.2, 0.0, 0]}} size={{[1.05, 2.0, 1.05]}} bays={{6}} accentHex={{"{accent_hex}"}} frame={{frame}} />
-      <HardwareRack pos={{[1.2, 0.0, 0]}} size={{[1.05, 2.0, 1.05]}} bays={{6}} accentHex={{"{accent_hex}"}} frame={{frame}} />
-      <PipeConduit points={{[[-1.2, 1.15, 0], [0, 1.35, 0], [1.2, 1.15, 0]]}} fluidColor={{"{accent_hex}"}} flangeCount={{3}} speed={{0.9}} frame={{frame}} />"""
+        inner = f"""
+      <LineChart2D x={{isVertical ? 140 : 420}} y={{isVertical ? 420 : 230}} w={{isVertical ? 800 : 1080}} h={{520}} label="POWER LOAD" startVal={{120}} endVal={{1000}} suffix=" MW" color={{"{accent}"}} progress={{progress}} />
+      <CartoonCharacter2D x={{isVertical ? 540 : 240}} y={{isVertical ? 1320 : 730}} scale={{1.05}} variant="ceo" mood="shocked" glasses={{true}} sweatDrop={{true}} pose="hands_head" frame={{frame}} />"""
     elif variant == 2:
-        body = f"""
-      <MatteBox pos={{[0, -1.1, 0]}} size={{[4.6, 0.2, 3.8]}} color="#2B3B52" />
-      <CoolingTower pos={{[-1.15, 0.1, 0]}} radius={{0.95}} height={{2.2}} accentHex={{"{accent_hex}"}} cutaway={{true}} frame={{frame}} />
-      <CoolingTower pos={{[1.25, 0.1, 0.2]}} radius={{0.85}} height={{2.0}} accentHex={{"{accent_hex}"}} cutaway={{false}} frame={{frame}} />
-      <PipeConduit points={{[[-2.3, -0.7, 0.6], [-1.15, -0.7, 0.4], [1.25, -0.7, 0.4]]}} fluidColor="#06B6D4" flangeCount={{3}} speed={{0.8}} frame={{frame}} />"""
+        inner = f"""
+      <ServerRack2D x={{isVertical ? 340 : 540}} y={{isVertical ? 760 : 540}} scale={{1.15}} accentHex={{"{accent}"}} frame={{frame}} />
+      <ServerRack2D x={{isVertical ? 740 : 940}} y={{isVertical ? 760 : 540}} scale={{1.15}} accentHex={{"{accent}"}} frame={{frame}} />
+      <Microchip2D x={{isVertical ? 540 : 1380}} y={{isVertical ? 1260 : 540}} scale={{1.1}} color={{"{accent}"}} overheating={{true}} cracked={{true}} frame={{frame}} progress={{progress}} />
+      <AnimatedPipe2D d={{isVertical ? "M 340 420 L 740 420 L 740 960" : "M 540 240 L 940 240 L 1380 420"}} fluidColor={{"{accent}"}} frame={{frame}} />"""
+    elif variant == 3:
+        inner = f"""
+      <BalanceScale2D x={{isVertical ? 540 : 960}} y={{isVertical ? 900 : 560}} leftLabel="GRID SUPPLY" rightLabel="AI DEMAND" tiltDeg={{18}} leftColor="#10B981" rightColor="#EF4444" progress={{progress}} />
+      <InkCallout2D x={{isVertical ? 540 : 960}} y={{isVertical ? 340 : 190}} text="BOTTLENECK" color="#EF4444" localTime={{localTime}} delaySec={{0.4}} />"""
+    elif variant == 4:
+        inner = f"""
+      <CoolingTower2D x={{isVertical ? 380 : 620}} y={{isVertical ? 780 : 560}} scale={{1.15}} accentHex={{"{accent}"}} frame={{frame}} />
+      <PowerPylon2D x={{isVertical ? 740 : 1140}} y={{isVertical ? 820 : 560}} scale={{1.1}} accentHex="#F59E0B" frame={{frame}} />
+      <BatteryBank2D x={{isVertical ? 540 : 1540}} y={{isVertical ? 1320 : 620}} scale={{1.05}} accentHex="#10B981" frame={{frame}} progress={{progress}} />"""
     else:
-        body = f"""
-      <MatteBox pos={{[0, -1.1, 0]}} size={{[5.2, 0.2, 3.4]}} color="#2D3E58" />
-      <FinnedHousing pos={{[-1.4, -0.05, 0]}} radius={{0.78}} height={{1.8}} finCount={{8}} accentHex="#38BDF8" cutaway={{true}} frame={{frame}} />
-      <PowerPylon pos={{[0.1, -0.05, -0.3]}} height={{2.2}} accentHex="#F59E0B" />
-      <BatteryContainer pos={{[1.65, -0.25, 0.2]}} size={{[1.4, 1.3, 1.1]}} accentHex={{"{accent_hex}"}} frame={{frame}} />
-      <PipeConduit points={{[[-1.4, 0.6, 0], [0.1, 0.75, -0.3], [1.65, 0.2, 0.2]]}} fluidColor={{"{accent_hex}"}} flangeCount={{3}} speed={{0.9}} frame={{frame}} />"""
+        inner = f"""
+      <WorldMapArc2D x={{isVertical ? 90 : 320}} y={{isVertical ? 460 : 200}} w={{isVertical ? 900 : 1280}} h={{640}} accentHex={{"{accent}"}} zoomLabel="SUBSEA LINK" progress={{progress}} frame={{frame}} />
+      <Stopwatch2D x={{isVertical ? 540 : 1620}} y={{isVertical ? 1380 : 340}} radius={{120}} maxSecLabel="24/7" progress={{progress}} />"""
 
     return f"""import React from "react";
 import {{
-  MatteBox, HardwareRack, FinnedHousing, PipeConduit,
-  DataHallBuilding, CitySkylineBlock, PowerPylon, CoolingTower, BatteryContainer
-}} from "../../components/StudioKit";
-import type {{ DynamicSceneProps }} from "../../types";
+  SceneBackdrop2D, Camera2D, CartoonCharacter2D, TitleCard2D,
+  InkCallout2D, LineChart2D, BalanceScale2D, WorldMapArc2D, Stopwatch2D,
+  ReactorVessel2D, CoolingTower2D, ServerRack2D, Microchip2D, PowerPylon2D, BatteryBank2D, AnimatedPipe2D
+}} from "../../components/CartoonKit2D";
+import type {{ Scene2DProps }} from "../../types";
 
-// Fallback: {safe_comment}
-export const Scene_{scene_num:02d}: React.FC<DynamicSceneProps> = ({{ frame, progress }}) => {{
+// Fallback 2D scene: {safe_comment}
+export const Scene_{scene_num:02d}: React.FC<Scene2DProps> = (props) => {{
+  const {{ frame, localTime, progress, peakTimes, accentHex, backdropTheme, cameraMove, isVertical }} = props;
+  const vb = isVertical ? "0 0 1080 1920" : "0 0 1920 1080";
   return (
-    <group>{body}
-    </group>
+    <svg viewBox={{vb}} style={{{{ width: "100%", height: "100%", display: "block" }}}}>
+      <SceneBackdrop2D theme={{backdropTheme}} frame={{frame}} accentHex={{accentHex}} />
+      <Camera2D move={{cameraMove}} progress={{progress}} frame={{frame}} peakTimes={{peakTimes}} localTime={{localTime}}>{inner}
+      </Camera2D>
+    </svg>
   );
 }};
 """
@@ -405,201 +280,98 @@ def sanitize_scene_tsx(code: str, scene_num: int) -> str:
     return txt.strip() + "\n"
 
 
-def normalize_callouts(raw_callouts: Any, is_short: bool) -> List[Dict[str, Any]]:
-    if not isinstance(raw_callouts, list):
-        return []
-    clean: List[Dict[str, Any]] = []
-    for ci, item in enumerate(raw_callouts[:2]):
-        if not isinstance(item, dict):
-            continue
-        label = clean_word_boundary_label(str(item.get("label") or ""), max_chars=34)
-        if not label:
-            continue
-        anc = item.get("anchorPct")
-        box = item.get("boxPct")
-        if not (isinstance(anc, list) and len(anc) == 2):
-            anc = [50, 50] if ci == 0 else [45, 58]
-        if not (isinstance(box, list) and len(box) == 2):
-            box = [72, 22] if not is_short else [62, 24]
-        ax = round(min(76.0, max(24.0, float(anc[0]))), 1)
-        ay = round(min(72.0, max(26.0, float(anc[1]))), 1)
-        bx = round(min(82.0, max(16.0, float(box[0]))), 1)
-        by = round(min(68.0, max(18.0, float(box[1]))), 1)
-        if bx < 38 and by < 32:
-            bx = 70.0
-        clean.append({"label": label, "anchorPct": [ax, ay], "boxPct": [bx, by]})
-    return clean
-
-
-def normalize_stat_counter(raw_stat: Any) -> Any:
-    if not isinstance(raw_stat, dict):
-        return None
-    label = clean_word_boundary_label(str(raw_stat.get("label") or ""), max_chars=28)
-    if not label:
-        return None
-    try:
-        from_val = float(raw_stat.get("fromVal", 0))
-        to_val = float(raw_stat.get("toVal", 100))
-    except Exception:
-        return None
-
-    inferred_dec = max(infer_decimals(from_val), infer_decimals(to_val))
-    raw_dec = raw_stat.get("decimals")
-    if isinstance(raw_dec, (int, float)) and int(raw_dec) >= inferred_dec:
-        decimals = min(3, int(raw_dec))
-    else:
-        decimals = min(3, inferred_dec)
-
-    return {
-        "label": label,
-        "fromVal": from_val,
-        "toVal": to_val,
-        "prefix": str(raw_stat.get("prefix") or "")[:6],
-        "suffix": str(raw_stat.get("suffix") or "")[:10],
-        "decimals": decimals,
-    }
-
-
 def normalize_storyboard(
     raw_board: Dict[str, Any],
     duration_sec: float,
     bpm: float,
     peaks: List[float],
-    words: List[Dict[str, Any]],
+    sentence_ends: List[float],
     fps: int,
     width: int,
     height: int,
-    is_short: bool,
 ) -> Dict[str, Any]:
     raw_scenes = raw_board.get("scenes") or []
     if not raw_scenes:
         raise ValueError("Storyboard returned empty scenes list.")
 
+    snap_points = sorted(set(peaks + sentence_ends))
     count = len(raw_scenes)
     avg_len = duration_sec / count
     cursor = 0.0
     scenes: List[Dict[str, Any]] = []
-    cam_bank = BEAT_CAM_PRESETS_9_16 if is_short else BEAT_CAM_PRESETS_16_9
+    seen_concepts: set[str] = set()
+    prev_backdrop = ""
+    prev_transition = ""
 
     for idx, sc in enumerate(raw_scenes):
         is_last = idx == count - 1
         start_sec = round(cursor, 3)
+
+        backdrop = str(sc.get("backdropTheme") or "").strip()
+        if backdrop not in BACKDROP_THEMES:
+            backdrop = BACKDROP_THEMES[idx % (len(BACKDROP_THEMES) - 1)]
+        # Never repeat same backdrop on consecutive scenes
+        if backdrop == prev_backdrop and backdrop != "black_title_card":
+            b_idx = BACKDROP_THEMES.index(backdrop)
+            backdrop = BACKDROP_THEMES[(b_idx + 1) % (len(BACKDROP_THEMES) - 1)]
+        prev_backdrop = backdrop
+
         if is_last:
             end_sec = round(duration_sec, 3)
         else:
             raw_end = float(sc.get("endSec", (idx + 1) * avg_len))
-            min_gap = 3.5 if is_short else 5.0
-            min_end = start_sec + max(min_gap, avg_len * 0.6)
-            max_end = duration_sec - (count - idx - 1) * min_gap
-            clamped = min(max(raw_end, min_end), max(min_end, max_end))
-            end_sec = snap_to_peak(clamped, peaks, start_sec + min_gap - 0.5, duration_sec - min_gap)
-        cursor = end_sec
-        sc_dur = max(3.0, end_sec - start_sec)
-
-        pal = PALETTES[idx % len(PALETTES)]
-        bg_hex = sanitize_hex(sc.get("bgHex"), pal["bgHex"])
-        accent_hex = sanitize_hex(sc.get("accentHex"), pal["accentHex"])
-
-        raw_beats = sc.get("beats") if isinstance(sc.get("beats"), list) else []
-        target_beats = max(2, min(4, int(round(sc_dur / 3.4))))
-        if sc_dur < 5.5:
-            target_beats = 2
-
-        default_cams = cam_bank[idx % len(cam_bank)]
-        clean_beats: List[Dict[str, Any]] = []
-        b_cursor = start_sec
-        b_step = sc_dur / target_beats
-
-        for bi in range(target_beats):
-            b_is_last = bi == target_beats - 1
-            b_start = round(b_cursor, 3)
-            if b_is_last:
-                b_end = end_sec
+            if backdrop == "black_title_card":
+                target_dur = min(2.6, max(1.4, raw_end - start_sec))
+                end_sec = round(min(duration_sec - 2.0, start_sec + target_dur), 3)
             else:
-                b_raw_end = start_sec + (bi + 1) * b_step
-                b_end = snap_to_peak(b_raw_end, peaks, b_start + 2.4, end_sec - 2.3)
-                if b_end <= b_start + 2.2:
-                    b_end = round(min(end_sec - 2.0, b_start + b_step), 3)
-            b_cursor = b_end
+                min_gap = 2.8 if duration_sec <= 45 else 3.4
+                max_gap = 8.2
+                clamped = min(max(raw_end, start_sec + min_gap), min(start_sec + max_gap, duration_sec - (count - idx - 1) * 2.2))
+                end_sec = snap_to_boundary(clamped, snap_points, start_sec + min_gap - 0.3, duration_sec - 1.8)
+        cursor = end_sec
 
-            rb = raw_beats[bi] if bi < len(raw_beats) and isinstance(raw_beats[bi], dict) else {}
-            def_cam = default_cams[bi % len(default_cams)]
-            off = rb.get("cameraOffset")
-            look = rb.get("lookOffset")
-            if not (isinstance(off, list) and len(off) == 3):
-                off = def_cam["offset"]
-            if not (isinstance(look, list) and len(look) == 3):
-                look = def_cam["lookOffset"]
+        concept = str(sc.get("visualConcept") or f"Scene Concept {idx + 1}").strip()[:110]
+        if concept.lower() in seen_concepts:
+            concept = f"{concept} ({idx + 1})"
+        seen_concepts.add(concept.lower())
 
-            # Keep cameras close & well-centered so 3D hardware fills ~65% of screen
-            cam_x = round(min(6.2, max(-6.2, float(off[0]))), 3)
-            cam_y = round(min(3.5, max(0.7, float(off[1]))), 3)
-            cam_z = round(min(6.5, max(-6.5, float(off[2]))), 3)
-            if abs(cam_x) + abs(cam_z) > 9.5:
-                cam_x = round(cam_x * 0.78, 3)
-                cam_z = round(cam_z * 0.78, 3)
+        cam = str(sc.get("cameraMove") or "").strip()
+        if cam not in CAMERA_MOVES:
+            cam = CAMERA_MOVES[idx % len(CAMERA_MOVES)]
 
-            callouts = normalize_callouts(rb.get("callouts"), is_short=is_short)
-            if not callouts:
-                concept_short = clean_word_boundary_label(str(sc.get("visualConcept") or "CORE HARDWARE"), 24)
-                callouts = [{"label": concept_short, "anchorPct": [50, 52], "boxPct": [72, 24]}]
+        trans = str(sc.get("transition") or "").strip()
+        if trans not in TRANSITIONS or trans == prev_transition:
+            trans = TRANSITIONS[(idx + 1) % len(TRANSITIONS)]
+        prev_transition = trans
 
-            stat_counter = normalize_stat_counter(rb.get("statCounter"))
-            if idx == 0 and bi == 0 and not stat_counter:
-                stat_counter = {
-                    "label": "TOTAL CAMPUS CAPEX",
-                    "fromVal": 0.0,
-                    "toVal": 100.0,
-                    "prefix": "$",
-                    "suffix": "B",
-                    "decimals": 0,
-                }
+        sfx = str(sc.get("sfx") or "").strip()
+        if sfx not in SFX_CUES:
+            sfx = "marker_swipe" if backdrop == "black_title_card" else SFX_CUES[idx % len(SFX_CUES)]
 
-            beat_peaks = [p for p in peaks if b_start <= p <= b_end]
-            trigger_sec = 0.0 if (idx == 0 and bi == 0) else (beat_peaks[0] if beat_peaks else round(b_start + 0.15, 3))
+        accent_hex = sanitize_hex(sc.get("accentHex"), ["#22C55E", "#38BDF8", "#F97316", "#F59E0B", "#22D3EE"][idx % 5])
 
-            clean_beats.append(
-                {
-                    "id": f"b_{idx + 1:02d}_{bi + 1:02d}",
-                    "startSec": b_start,
-                    "endSec": round(b_end, 3),
-                    "triggerSec": trigger_sec,
-                    "cameraOffset": [cam_x, cam_y, cam_z],
-                    "lookOffset": [
-                        round(min(0.8, max(-0.8, float(look[0]))), 3),
-                        round(min(0.6, max(0.0, float(look[1]))), 3),
-                        round(min(0.8, max(-0.8, float(look[2]))), 3),
-                    ],
-                    "callouts": callouts,
-                    "statCounter": stat_counter,
-                }
-            )
-
-        world_pos = [
-            round(idx * 28.0, 2),
-            round(2.4 if idx % 2 == 1 else 0.0, 2),
-            round(-idx * 20.0 + (3.0 if idx % 3 == 1 else 0.0), 2),
-        ]
+        local_peaks = [round(p - start_sec, 3) for p in peaks if start_sec + 0.25 <= p <= end_sec - 0.25]
 
         scenes.append(
             {
                 "id": f"scene_{idx + 1:02d}",
                 "componentName": f"Scene_{idx + 1:02d}",
-                "visualConcept": str(sc.get("visualConcept") or f"Hardware Assembly {idx + 1}")[:120],
-                "visualSpec": str(sc.get("visualSpec") or "Multi-part CAD-edged cutaway hardware assembly.")[:500],
+                "visualConcept": concept,
+                "visualSpec": str(sc.get("visualSpec") or concept)[:500],
+                "titleText": str(sc.get("titleText") or "")[:45],
+                "backdropTheme": backdrop,
+                "cameraMove": cam,
+                "transition": trans,
+                "sfx": sfx,
+                "accentHex": accent_hex,
                 "startSec": start_sec,
                 "endSec": end_sec,
-                "worldPos": world_pos,
-                "bgHex": bg_hex,
-                "accentHex": accent_hex,
-                "beats": clean_beats,
+                "localPeakTimes": local_peaks,
             }
         )
 
-    subtitle_chunks = build_subtitle_chunks(words, duration_sec)
-
     return {
-        "channel": "InfraVerse",
+        "channel": "InfraVerse2D",
         "fps": fps,
         "width": width,
         "height": height,
@@ -607,7 +379,6 @@ def normalize_storyboard(
         "hasAudio": True,
         "bpm": bpm,
         "emphasisPeaksSec": peaks,
-        "subtitleChunks": subtitle_chunks,
         "scenes": scenes,
     }
 
@@ -626,24 +397,23 @@ def write_registry_and_timeline(plan: Dict[str, Any]) -> None:
 
     registry_ts = (
         'import type React from "react";\n'
-        'import type { DynamicSceneProps } from "../types";\n'
+        'import type { Scene2DProps } from "../types";\n'
         + "\n".join(imports)
-        + "\n\nexport const SCENE_REGISTRY: Record<string, React.FC<DynamicSceneProps>> = {\n"
+        + "\n\nexport const SCENE_REGISTRY: Record<string, React.FC<Scene2DProps>> = {\n"
         + "\n".join(entries)
         + "\n};\n"
     )
     (GENERATED_DIR / "SceneRegistry.ts").write_text(registry_ts, encoding="utf-8")
 
     scenes_data_ts = (
-        'import type { DocumentaryPlan } from "../types";\n\n'
-        f"export const SCENE_PLAN: DocumentaryPlan = {json.dumps(plan, indent=2, ensure_ascii=False)};\n"
+        'import type { CartoonPlan } from "../types";\n\n'
+        f"export const SCENE_PLAN: CartoonPlan = {json.dumps(plan, indent=2, ensure_ascii=False)};\n"
     )
     (GENERATED_DIR / "ScenesData.ts").write_text(scenes_data_ts, encoding="utf-8")
 
     timeline_tsx = f"""import React from "react";
 import {{ AbsoluteFill }} from "remotion";
-import {{ Continuous3DWorld }} from "../components/Continuous3DWorld";
-import {{ HudOverlay }} from "../components/HudOverlay";
+import {{ CartoonStage2D }} from "../components/CartoonStage2D";
 import {{ SCENE_PLAN }} from "./ScenesData";
 
 export const GENERATED_TOTAL_FRAMES = {total_frames};
@@ -651,8 +421,7 @@ export const GENERATED_TOTAL_FRAMES = {total_frames};
 export const GeneratedTimeline: React.FC = () => {{
   return (
     <AbsoluteFill>
-      <Continuous3DWorld plan={{SCENE_PLAN}} />
-      <HudOverlay plan={{SCENE_PLAN}} />
+      <CartoonStage2D plan={{SCENE_PLAN}} />
     </AbsoluteFill>
   );
 }};
@@ -693,7 +462,7 @@ def self_heal_scenes(client: Any, plan: Dict[str, Any]) -> None:
             fix_prompt = f"""
 Fix the TypeScript errors in `{cname}.tsx`.
 
-{STUDIO_KIT_API_DOC}
+{CARTOON_KIT_DOC}
 
 ERRORS:
 {chr(10).join(err_lines)}
@@ -718,9 +487,15 @@ Return ONLY the fixed complete TSX file.
         for cname in still_broken:
             num = int(cname.split("_")[1])
             sc_meta = scene_map.get(cname, {})
-            print(f"[self_heal] Swapping stubborn {cname} to multi-part fallback.")
+            print(f"[self_heal] Swapping stubborn {cname} to unique 2D cartoon fallback.")
             (SCENES_DIR / f"{cname}.tsx").write_text(
-                build_safe_fallback_scene_tsx(num, sc_meta.get("accentHex", "#22D3EE"), sc_meta.get("visualConcept", cname)),
+                build_safe_fallback_scene_tsx(
+                    num,
+                    sc_meta.get("backdropTheme", "night_mountains"),
+                    sc_meta.get("accentHex", "#22C55E"),
+                    sc_meta.get("visualConcept", cname),
+                    sc_meta.get("titleText", ""),
+                ),
                 encoding="utf-8",
             )
         verify = run_tsc_check()
@@ -734,7 +509,7 @@ def main() -> None:
     duration_sec = float(beats["duration_sec"])
     bpm = float(beats["bpm"])
     peaks = list(beats["emphasis_peaks"])
-    words = list(transcript.get("words") or [])
+    sentence_ends = [float(s["end"]) for s in transcript.get("segments", [])]
 
     video_format = os.environ.get("VIDEO_FORMAT", "long_16_9").strip()
     quality = os.environ.get("QUALITY_PRESET", "1080p_30fps").strip()
@@ -749,26 +524,22 @@ def main() -> None:
 
     input_dir = get_input_dir()
     visuals_prompt = load_visuals_prompt(input_dir)
-    custom_models = discover_custom_models()
     min_sc, max_sc = compute_scene_range(duration_sec, is_short=is_short)
 
-    framing_note = (
-        "VERTICAL 9:16 SHORT (1080x1920): Keep X tight [-2.0 .. +2.0], build TALL vertical stacked hardware [-1.2 .. +2.4 Y]."
+    aspect_note = (
+        "VERTICAL 9:16 SHORT (viewBox 0..1080 wide x 0..1920 tall): Stack foreground characters & machinery cleanly vertically (x around 200..880, y around 320..1550)."
         if is_short
-        else "WIDESCREEN 16:9 (1920x1080): Keep hero centered around [0, 0, 0] within [-3.2 .. +3.2] X/Z and base resting at Y = -1.1."
+        else "WIDESCREEN 16:9 (viewBox 0..1920 wide x 0..1080 tall): Compose foreground characters, cutaways, charts & callouts cleanly across the full frame (x 160..1760, y 140..960)."
     )
 
     storyboard_prompt = f"""
-You are the Lead 3D Motion Director & Technical Illustrator (Branch Education / Real Engineering style with crisp HUD callouts).
+You are the Lead 2D Animated Explainer Director (exact Video-1 hand-inked 2D cartoon documentary style: expressive pill-characters, bold ink outlines, rich varied environments, visual metaphors, highlighter quotes, charts, and dramatic black handwritten title cards).
 
-ASPECT & CLOSE CAMERA FRAMING:
-{framing_note}
-CRITICAL FRAMING RULE: Keep `cameraOffset` CLOSE so the 3D subject fills 60-70% of the screen (`X/Z` within 2.5..4.6, `Y` within 1.1..2.6, `lookOffset` Y around `0.25`). NEVER place the camera far away!
+ASPECT:
+{aspect_note}
 
-USER VISUAL DESCRIPTION:
-{visuals_prompt if visuals_prompt else "(No visuals.txt uploaded — invent vivid multi-part engineering & infrastructure 3D scenes matching the voiceover!)"}
-
-CUSTOM .GLB MODELS: {json.dumps(custom_models)}
+USER VISUAL & STYLE DIRECTION (Follow EVERY environment style, mood, and element requested here!):
+{visuals_prompt if visuals_prompt else "(No visuals.txt uploaded — design a richly varied Video-1-style cartoon visual journey matching every sentence of the narration!)"}
 
 VOICEOVER SEGMENTS ({duration_sec:.2f}s):
 {json.dumps([{"start": s["start"], "end": s["end"], "text": s["text"]} for s in transcript.get("segments", [])], ensure_ascii=False)}
@@ -776,54 +547,50 @@ VOICEOVER SEGMENTS ({duration_sec:.2f}s):
 VOCAL EMPHASIS PEAKS (seconds):
 {json.dumps(peaks[:120])}
 
-HARD RULES:
-1. Divide the {duration_sec:.2f}s narration into {min_sc} to {max_sc} unique 3D chapters (`scenes`), roughly 6-10s each!
-2. LITERAL NOUN MATCHING: Whenever narration mentions concrete walls, warehouses, cities, power pylons, cooling towers, server racks, or batteries, specify those EXACT literal structures in `visualSpec` (DataHallBuilding, CitySkylineBlock, PowerPylon, CoolingTower, HardwareRack, BatteryContainer)!
-3. FORCED 3-4 SECOND BEATS: Inside EVERY chapter, define 2 or 3 `beats` (~3-4s each) with noticeably different `cameraOffset` angles plus:
-   - `callouts`: 1-2 short labels (MAX 3-4 words / <= 26 chars so nothing wraps awkwardly, e.g. `"4NM SILICON DIE"`, `"345 KV SUBSTATION"`, `"600 kW / RACK"`) with `anchorPct` [30..70, 32..66] and `boxPct` [18..78, 20..64].
-   - `statCounter`: animated stat card (`label`, `fromVal`, `toVal`, `prefix`, `suffix`, `decimals`) whenever specs/numbers are mentioned. Set `decimals` properly (`1` for 3.2/4.5, `2` for 1.12, `3` for 99.999, `0` for whole numbers).
-4. STUDIO COLORS: Rich readable slate/blueprint `bgHex` (#101B2E, #13223A, #20161F, #102430, #102822) + bright `accentHex`.
+AVAILABLE BACKDROP THEMES:
+{json.dumps(BACKDROP_THEMES)}
+
+AVAILABLE CAMERA MOVES: {json.dumps(CAMERA_MOVES)}
+AVAILABLE TRANSITIONS: {json.dumps(TRANSITIONS)}
+AVAILABLE SFX CUES: {json.dumps(SFX_CUES)}
+
+HARD STORYBOARD RULES:
+1. Break the {duration_sec:.2f}s voiceover into {min_sc} to {max_sc} snappy scenes synced to exact sentence boundaries!
+   - Normal cartoon scenes MUST stay 3.5 to 8.0 seconds (never dull long holds).
+   - Drop 2–4 short `black_title_card` scenes (1.5–2.3s long, with a punchy 2–4 word `titleText` like `"Nobody noticed."`, `"The Cooling Trap"`, `"Zero Margin."`) right at major story turns!
+2. ZERO VISUAL REPETITION: Every scene MUST have a unique `visualConcept` AND vary `backdropTheme` and `transition` across consecutive scenes so it feels genuinely human-edited!
+3. MATCH SPOKEN NOUNS & METAPHORS LITERALLY: Use `SplitScreen3Panel` when listing 3 things (`bank / substation / city`), `LineChart2D` or `BarChart2D` for surging power/costs, `BalanceScale2D` for comparisons, `ConveyorBelt2D` for chip generations, `WorldMapArc2D` for subsea cables/global routes, `QuoteHighlight2D` for reports/quotes, `CartoonCharacter2D` reacting emotionally, and `ReactorVessel2D` / `CoolingTower2D` / `ServerRack2D` / `Microchip2D` / `PowerPylon2D` / `BatteryBank2D` + custom SVG art!
 
 Return ONLY valid JSON:
 {{
   "scenes": [
     {{
-      "visualConcept": "Data Hall Campus & City Grid",
-      "visualSpec": "DataHallBuilding concrete walls connected via PowerPylon and PipeConduit to CitySkylineBlock",
-      "endSec": 8.0,
-      "bgHex": "#101B2E",
-      "accentHex": "#22D3EE",
-      "beats": [
-        {{
-          "cameraOffset": [3.8, 2.0, 4.3],
-          "lookOffset": [0.0, 0.35, 0.0],
-          "callouts": [{{"label": "1,000 MW DATA HALL", "anchorPct": [46, 52], "boxPct": [74, 24]}}],
-          "statCounter": {{"label": "TOTAL CAPEX", "fromVal": 0, "toVal": 100, "prefix": "$", "suffix": "B", "decimals": 0}}
-        }},
-        {{
-          "cameraOffset": [1.5, 1.3, 3.0],
-          "lookOffset": [0.15, 0.25, 0.0],
-          "callouts": [{{"label": "CITY POWER DRAW", "anchorPct": [60, 56], "boxPct": [22, 34]}}]
-        }}
-      ]
+      "visualConcept": "Short unique concept summary",
+      "visualSpec": "Specific 2D layout, characters, moods, props, callout text, chart/scale numbers & animations synced to spoken words",
+      "titleText": "Optional short text if backdropTheme is black_title_card",
+      "backdropTheme": "night_mountains",
+      "cameraMove": "push_in",
+      "transition": "slide_left",
+      "sfx": "sub_impact",
+      "accentHex": "#22C55E",
+      "endSec": 6.7
     }}
   ]
 }}
 """
 
     client = get_client()
-    print(f"[generate_scenes] Planning storyboard from {input_dir.name}/ ({width}x{height} @ {fps}fps)...")
+    print(f"[generate_scenes] Planning Video-1 2D storyboard from {input_dir.name}/ ({width}x{height} @ {fps}fps)...")
     raw_board = generate_with_fallback(client, storyboard_prompt, role="pro", json_mode=True)
     plan = normalize_storyboard(
         parse_json_strict(raw_board),
         duration_sec=duration_sec,
         bpm=bpm,
         peaks=peaks,
-        words=words,
+        sentence_ends=sentence_ends,
         fps=fps,
         width=width,
         height=height,
-        is_short=is_short,
     )
     (WORK_DIR / "scene_plan.json").write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -833,7 +600,7 @@ Return ONLY valid JSON:
 
     scenes = plan["scenes"]
     batch_size = 4
-    print(f"[generate_scenes] Coding {len(scenes)} literal multi-part 3D scenes in batches of {batch_size}...")
+    print(f"[generate_scenes] Drawing {len(scenes)} unique 2D cartoon scenes in batches of {batch_size}...")
 
     for b_start in range(0, len(scenes), batch_size):
         batch = scenes[b_start : b_start + batch_size]
@@ -842,20 +609,23 @@ Return ONLY valid JSON:
                 "componentName": sc["componentName"],
                 "visualConcept": sc["visualConcept"],
                 "visualSpec": sc["visualSpec"],
+                "titleText": sc["titleText"],
+                "backdropTheme": sc["backdropTheme"],
                 "accentHex": sc["accentHex"],
-                "customModelsAvailable": custom_models,
+                "durationSec": round(sc["endSec"] - sc["startSec"], 2),
+                "localPeakTimes": sc["localPeakTimes"],
             }
             for sc in batch
         ]
         code_prompt = f"""
-You are an Expert Three.js / React Three Fiber CAD & Infrastructure 3D Animator.
-{framing_note}
-{STUDIO_KIT_API_DOC}
+You are an Expert 2D Cartoon Vector Animator coding SVG + CartoonKit2D scenes in Remotion.
+{aspect_note}
+{CARTOON_KIT_DOC}
 
-BATCH TO CODE (Use literal architectural components like DataHallBuilding, CitySkylineBlock, PowerPylon, CoolingTower, BatteryContainer, HardwareRack, FinnedHousing, PipeConduit, HeatSinkArray, GlassShell! Keep models grounded around Y = -1.1 and X/Z within [-3.2..+3.2]):
+BATCH TO ILLUSTRATE (Make EVERY scene visually rich, lively, full of motion, with bold #111827 ink outlines, expressive CartoonCharacter2D reactions, animated charts/scales/cutaways/pipes, and clean InkCallout2D stats synced to localPeakTimes):
 {json.dumps(batch_specs, indent=2)}
 
-Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_01") and each value is the complete valid TSX file string starting with `import React from "react";`.
+Return ONLY valid JSON mapping each exact `componentName` (e.g. "Scene_01") to its complete valid TSX file string starting with `import React from "react";`.
 """
         try:
             raw_code_json = generate_with_fallback(
@@ -867,7 +637,7 @@ Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_
             )
             generated_map = extract_scenes_dict(raw_code_json)
         except Exception as exc:
-            print(f"[generate_scenes] Batch {b_start+1} API failed ({exc}); using multi-part fallbacks.")
+            print(f"[generate_scenes] Batch {b_start+1} API failed ({exc}); using 2D fallbacks.")
             generated_map = {}
 
         for sc in batch:
@@ -879,11 +649,17 @@ Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_
                 if not raw_tsx.strip():
                     raise ValueError(f"Empty code returned for {cname}")
                 out_path.write_text(sanitize_scene_tsx(raw_tsx, num), encoding="utf-8")
-                print(f"  + Generated custom {cname}.tsx ({sc['visualConcept'][:48]})")
+                print(f"  + Illustrated {cname}.tsx [{sc['backdropTheme']}] ({sc['visualConcept'][:44]})")
             except Exception as exc:
-                print(f"  ! {cname} sanitize issue ({exc}); writing multi-part fallback.")
+                print(f"  ! {cname} sanitize issue ({exc}); writing unique 2D fallback.")
                 out_path.write_text(
-                    build_safe_fallback_scene_tsx(num, sc["accentHex"], sc["visualConcept"]),
+                    build_safe_fallback_scene_tsx(
+                        num,
+                        sc["backdropTheme"],
+                        sc["accentHex"],
+                        sc["visualConcept"],
+                        sc["titleText"],
+                    ),
                     encoding="utf-8",
                 )
 
@@ -892,7 +668,7 @@ Return ONLY valid JSON where each key is the exact `componentName` (e.g. "Scene_
 
     write_registry_and_timeline(plan)
     self_heal_scenes(client, plan)
-    print(f"[generate_scenes] Complete: {len(scenes)} literal multi-part scenes + HUD verified!")
+    print(f"[generate_scenes] Complete: {len(scenes)} unique 2D cartoon scenes verified!")
 
 
 if __name__ == "__main__":

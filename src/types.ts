@@ -1,63 +1,62 @@
-export type V3 = [number, number, number];
+export type BackdropTheme =
+  | "night_mountains"
+  | "sunset_horizon"
+  | "daylight_city"
+  | "graph_paper"
+  | "notebook_lined"
+  | "world_map"
+  | "warm_office"
+  | "steel_vault"
+  | "dark_industrial"
+  | "news_document"
+  | "split_3panel"
+  | "black_title_card";
 
-export interface DynamicSceneProps {
+export type CameraMove2D =
+  | "push_in"
+  | "pull_out"
+  | "pan_right"
+  | "pan_left"
+  | "pan_up"
+  | "shake_hit";
+
+export type Transition2D =
+  | "slide_left"
+  | "slide_up"
+  | "wipe_right"
+  | "zoom_dissolve"
+  | "flash_cut";
+
+export interface Scene2DProps {
   frame: number;
   localFrame: number;
+  localTime: number;
+  durationSec: number;
   progress: number;
+  peakTimes: number[];
   accentHex: string;
+  backdropTheme: BackdropTheme;
+  cameraMove: CameraMove2D;
+  isVertical: boolean;
 }
 
-export interface HudCallout {
-  label: string;
-  anchorPct: [number, number];
-  boxPct: [number, number];
-}
-
-export interface StatCounter {
-  label: string;
-  fromVal: number;
-  toVal: number;
-  prefix?: string;
-  suffix?: string;
-  decimals?: number;
-}
-
-export interface VisualBeat {
-  id: string;
-  startSec: number;
-  endSec: number;
-  triggerSec: number;
-  cameraOffset: V3;
-  lookOffset: V3;
-  callouts: HudCallout[];
-  statCounter: StatCounter | null;
-}
-
-export interface SubtitleWord {
-  text: string;
-  highlight: boolean;
-}
-
-export interface SubtitleChunk {
-  startSec: number;
-  endSec: number;
-  words: SubtitleWord[];
-}
-
-export interface DocumentaryScene {
+export interface CartoonScene {
   id: string;
   componentName: string;
   visualConcept: string;
   visualSpec: string;
+  titleText: string;
+  backdropTheme: BackdropTheme;
+  cameraMove: CameraMove2D;
+  transition: Transition2D;
+  sfx: string;
+  accentHex: string;
   startSec: number;
   endSec: number;
-  worldPos: V3;
-  bgHex: string;
-  accentHex: string;
-  beats: VisualBeat[];
+  localPeakTimes: number[];
 }
 
-export interface DocumentaryPlan {
+export interface CartoonPlan {
   channel: string;
   fps: number;
   width: number;
@@ -66,6 +65,5 @@ export interface DocumentaryPlan {
   hasAudio: boolean;
   bpm: number;
   emphasisPeaksSec: number[];
-  subtitleChunks: SubtitleChunk[];
-  scenes: DocumentaryScene[];
+  scenes: CartoonScene[];
 }
