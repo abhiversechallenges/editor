@@ -1,29 +1,19 @@
 import React from "react";
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
 import { SCENE_REGISTRY } from "../generated/SceneRegistry";
+import { BlueprintStamp2D, StatCounter2D } from "./CartoonKit2D";
 import type { CartoonPlan, Transition2D } from "../types";
 
-function computeTransitionTransform(
-  transition: Transition2D,
-  enterProg: number,
-  width: number,
-  height: number
-): { transform?: string; opacity: number } {
+function computeTransitionTransform(transition: Transition2D, enterProg: number, width: number, height: number): { transform?: string; opacity: number } {
   const p = Math.max(0, Math.min(1, enterProg));
   const ease = p * p * (3 - 2 * p);
-
   switch (transition) {
-    case "slide_left":
-      return { transform: `translateX(${(1 - ease) * width}px)`, opacity: 1 };
-    case "slide_up":
-      return { transform: `translateY(${(1 - ease) * height}px)`, opacity: 1 };
-    case "wipe_right":
-      return { transform: `translateX(${-(1 - ease) * width}px)`, opacity: 1 };
-    case "zoom_dissolve":
-      return { transform: `scale(${0.92 + 0.08 * ease})`, opacity: ease };
+    case "slide_left": return { transform: `translateX(${(1 - ease) * width}px)`, opacity: 1 };
+    case "slide_up": return { transform: `translateY(${(1 - ease) * height}px)`, opacity: 1 };
+    case "wipe_right": return { transform: `translateX(${-(1 - ease) * width}px)`, opacity: 1 };
+    case "zoom_dissolve": return { transform: `scale(${0.92 + 0.08 * ease})`, opacity: ease };
     case "flash_cut":
-    default:
-      return { opacity: Math.min(1, p * 2.5) };
+    default: return { opacity: Math.min(1, p * 2.5) };
   }
 }
 
@@ -32,7 +22,7 @@ export const CartoonStage2D: React.FC<{ plan: CartoonPlan }> = ({ plan }) => {
   const { width, height, fps } = useVideoConfig();
   const tSec = frame / fps;
   const isVertical = height > width;
-  const transSec = 0.24;
+  const transSec = 0.22;
 
   let activeIdx = plan.scenes.findIndex((s) => tSec >= s.startSec && tSec <= s.endSec);
   if (activeIdx === -1) activeIdx = plan.scenes.length - 1;
@@ -47,57 +37,40 @@ export const CartoonStage2D: React.FC<{ plan: CartoonPlan }> = ({ plan }) => {
 
   const ActiveComp = SCENE_REGISTRY[activeScene.id];
   const PrevComp = prevScene ? SCENE_REGISTRY[prevScene.id] : null;
-
   const activeDur = Math.max(0.1, activeScene.endSec - activeScene.startSec);
   const activeProgress = Math.max(0, Math.min(1, timeIntoScene / activeDur));
-  const activeStyle = inTransition
-    ? computeTransitionTransform(activeScene.transition, enterProg, width, height)
-    : { opacity: 1 };
+  const activeStyle = inTransition ? computeTransitionTransform(activeScene.transition, enterProg, width, height) : { opacity: 1 };
+  const flashOpacity = inTransition && activeScene.transition === "flash_cut" ? interpolate(enterProg, [0, 0.35, 1], [0.85, 0.4, 0], { extrapolateRight: "clamp" }) : 0;
 
-  const flashOpacity =
-    inTransition && activeScene.transition === "flash_cut"
-      ? interpolate(enterProg, [0, 0.35, 1], [0.85, 0.4, 0], { extrapolateRight: "clamp" })
-      : 0;
+  const vb = isVertical ? "0 0 1080 1920" : "0 0 1920 1080";
+  const showHudOverlays = activeScene.backdropTheme !== "black_title_card";
+  const stampTrigger = activeScene.stampTriggerSec ?? activeScene.localPeakTimes[0] ?? 0.65;
 
   return (
-    <AbsoluteFill style={{ backgroundColor: "#050811", overflow: "hidden" }}>
+    <AbsoluteFill style={{ backgroundColor: "#04070E", overflow: "hidden" }}>
       {inTransition && prevScene && PrevComp && (
         <AbsoluteFill>
-          <PrevComp
-            frame={frame}
-            localFrame={Math.max(0, frame - Math.round(prevScene.startSec * fps))}
-            localTime={tSec - prevScene.startSec}
-            durationSec={Math.max(0.1, prevScene.endSec - prevScene.startSec)}
-            progress={1}
-            peakTimes={prevScene.localPeakTimes}
-            accentHex={prevScene.accentHex}
-            backdropTheme={prevScene.backdropTheme}
-            cameraMove={prevScene.cameraMove}
-            isVertical={isVertical}
-          />
+          <PrevComp frame={frame} localFrame={Math.max(0, frame - Math.round(prevScene.startSec * fps))} localTime={tSec - prevScene.startSec} durationSec={Math.max(0.1, prevScene.endSec - prevScene.startSec)} progress={1} peakTimes={prevScene.localPeakTimes} accentHex={prevScene.accentHex} backdropTheme={prevScene.backdropTheme} cameraMove={prevScene.cameraMove} chapterTag={prevScene.chapterTag || "01 // CORE TO GRID"} isVertical={isVertical} />
         </AbsoluteFill>
       )}
-
       {ActiveComp && (
         <AbsoluteFill style={activeStyle}>
-          <ActiveComp
-            frame={frame}
-            localFrame={Math.max(0, frame - Math.round(activeScene.startSec * fps))}
-            localTime={timeIntoScene}
-            durationSec={activeDur}
-            progress={activeProgress}
-            peakTimes={activeScene.localPeakTimes}
-            accentHex={activeScene.accentHex}
-            backdropTheme={activeScene.backdropTheme}
-            cameraMove={activeScene.cameraMove}
-            isVertical={isVertical}
-          />
+          <ActiveComp frame={frame} localFrame={Math.max(0, frame - Math.round(activeScene.startSec * fps))} localTime={timeIntoScene} durationSec={activeDur} progress={activeProgress} peakTimes={activeScene.localPeakTimes} accentHex={activeScene.accentHex} backdropTheme={activeScene.backdropTheme} cameraMove={activeScene.cameraMove} chapterTag={activeScene.chapterTag || "01 // CORE TO GRID"} isVertical={isVertical} />
         </AbsoluteFill>
       )}
-
-      {flashOpacity > 0 && (
-        <AbsoluteFill style={{ backgroundColor: "#FFFFFF", opacity: flashOpacity, pointerEvents: "none" }} />
+      {showHudOverlays && (activeScene.statCounter || activeScene.stampText) && (
+        <AbsoluteFill style={{ pointerEvents: "none" }}>
+          <svg viewBox={vb} style={{ width: "100%", height: "100%", display: "block" }}>
+            {activeScene.statCounter && (
+              <StatCounter2D x={isVertical ? 540 : 1580} y={isVertical ? 1720 : 815} w={isVertical ? 820 : 540} label={activeScene.statCounter.label} startVal={activeScene.statCounter.startVal} endVal={activeScene.statCounter.endVal} prefix={activeScene.statCounter.prefix} suffix={activeScene.statCounter.suffix} decimals={activeScene.statCounter.decimals ?? 0} color={activeScene.statCounter.color || activeScene.accentHex} localTime={timeIntoScene} triggerSec={activeScene.statCounter.triggerSec ?? 0.15} />
+            )}
+            {activeScene.stampText && (
+              <BlueprintStamp2D x={isVertical ? 540 : 980} y={isVertical ? 410 : 175} text={activeScene.stampText} color={activeScene.stampColor || "#EF4444"} localTime={timeIntoScene} triggerSec={stampTrigger} />
+            )}
+          </svg>
+        </AbsoluteFill>
       )}
+      {flashOpacity > 0 && <AbsoluteFill style={{ backgroundColor: "#FFFFFF", opacity: flashOpacity, pointerEvents: "none" }} />}
     </AbsoluteFill>
   );
 };

@@ -1,7 +1,7 @@
 # CoreToGrid Technical Blueprint Visual Directive
-# Themes: isometric_blueprint, xray_cutaway, substation_grid, cleanroom_fab,
-#         thermal_flow, server_corridor, dark_industrial, black_title_card, split_3panel
-- Scene 1 [isometric_blueprint]: 1-GW data center hall aerial schematic, Telemetry HUD showing "CAMPUS LOAD: 940 MW".
+# Rotate every 4-6s: isometric_blueprint, spec_document, xray_cutaway, thermal_flow, us_grid_map, substation_grid, black_title_card
+- Scene 1 [isometric_blueprint]: 2.5D Data Hall with right HUD (1,000 MW, 600 kW, $100B) & labeled 18C/45C pipes.
 - Scene 2 [black_title_card]: "The Air Cooling Wall"
-- Scene 3 [thermal_flow]: Microchannel cold plate cross-section, blue 32C inlet -> red 62C outlet coolant trace.
-- Scene 4 [substation_grid]: 345 kV substation transformer stepdown feeding facility switchgear.
+- Scene 3 [spec_document]: $100B Capex breakdown document.
+- Scene 4 [thermal_flow]: 2.5D Microchannel Cold Plate cross-section with labeled coolant tubes.
+- Scene 5 [us_grid_map]: US Grid Map with 345 kV Transformer & SMR nodes.

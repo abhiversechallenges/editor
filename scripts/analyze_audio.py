@@ -25,10 +25,7 @@ def git_commit_timestamp(path: Path) -> int:
     try:
         res = subprocess.run(
             ["git", "log", "-n", "1", "--format=%ct", "--", str(path.relative_to(ROOT))],
-            cwd=str(ROOT),
-            capture_output=True,
-            text=True,
-            check=False,
+            cwd=str(ROOT), capture_output=True, text=True, check=False,
         )
         val = (res.stdout or "").strip()
         if val.isdigit():
@@ -77,9 +74,7 @@ def transcribe_audio(wav_path: Path) -> Dict[str, Any]:
         vad_parameters={"min_silence_duration_ms": 380},
         initial_prompt=(
             "Nvidia Blackwell, GB200, NVLink spine, microchannel cold plates, liquid cooling, "
-            "dielectric fluid, CDU, cooling distribution unit, 800 kW, 130 kW per rack, "
-            "substation, high-voltage transformer, 345 kV, 500 kV, SMR nuclear reactor, "
-            "busbar, blind-mate quick disconnect, optical transceiver, CoWoS, TSMC 3nm."
+            "dielectric fluid, CDU, 800 kW, 600 kW, 1.12 PUE, substation, 345 kV, 500 kV, SMR nuclear reactor, busbar, CoWoS."
         ),
     )
 
@@ -89,21 +84,11 @@ def transcribe_audio(wav_path: Path) -> Dict[str, Any]:
         seg_words: List[Dict[str, Any]] = []
         if seg.words:
             for w in seg.words:
-                w_item = {
-                    "word": w.word.strip(),
-                    "start": round(float(w.start), 3),
-                    "end": round(float(w.end), 3),
-                }
+                w_item = {"word": w.word.strip(), "start": round(float(w.start), 3), "end": round(float(w.end), 3)}
                 if w_item["word"]:
                     words.append(w_item)
                     seg_words.append(w_item)
-        segments.append({
-            "id": seg.id,
-            "start": round(float(seg.start), 3),
-            "end": round(float(seg.end), 3),
-            "text": seg.text.strip(),
-            "words": seg_words,
-        })
+        segments.append({"id": seg.id, "start": round(float(seg.start), 3), "end": round(float(seg.end), 3), "text": seg.text.strip(), "words": seg_words})
 
     return {
         "language": info.language,
@@ -122,18 +107,9 @@ def analyze_beats(wav_path: Path) -> Dict[str, Any]:
     hop_length = 512
     rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=hop_length)[0]
     onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length)
+    combined = 0.65 * (rms / (np.max(rms) + 1e-8)) + 0.35 * (onset_env / (np.max(onset_env) + 1e-8))
 
-    rms_norm = rms / (np.max(rms) + 1e-8)
-    onset_norm = onset_env / (np.max(onset_env) + 1e-8)
-    combined = 0.65 * rms_norm + 0.35 * onset_norm
-
-    min_distance = int((1.8 * sr) / hop_length)
-    peaks, _ = find_peaks(
-        combined,
-        height=float(np.percentile(combined, 68)),
-        distance=max(1, min_distance),
-        prominence=0.09,
-    )
+    peaks, _ = find_peaks(combined, height=float(np.percentile(combined, 68)), distance=max(1, int((1.8 * sr) / hop_length)), prominence=0.09)
     peak_times = [round(float(librosa.frames_to_time(p, sr=sr, hop_length=hop_length)), 3) for p in peaks]
 
     tempo, _ = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr, hop_length=hop_length)
@@ -141,11 +117,7 @@ def analyze_beats(wav_path: Path) -> Dict[str, Any]:
     if bpm_val < 70 or bpm_val > 135:
         bpm_val = 105.0
 
-    return {
-        "duration_sec": round(duration_sec, 3),
-        "bpm": round(bpm_val, 1),
-        "emphasis_peaks": peak_times,
-    }
+    return {"duration_sec": round(duration_sec, 3), "bpm": round(bpm_val, 1), "emphasis_peaks": peak_times}
 
 
 def main() -> None:

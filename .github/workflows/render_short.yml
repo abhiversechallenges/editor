@@ -13,51 +13,37 @@ concurrency:
 jobs:
   plan_and_prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     outputs:
       has_input: ${{ steps.check_input.outputs.has_input }}
       chunks_json: ${{ steps.chunk_plan.outputs.chunks_json }}
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Check input
-        id: check_input
+      - run: |
+          if [ -f setup_factory.py ]; then python setup_factory.py --no-git; fi
+      - id: check_input
         run: |
           shopt -s nullglob nocaseglob
           files=(input_short/*.mp3 input_short/*.wav input_short/*.m4a)
           echo "has_input=$([ ${#files[@]} -gt 0 ] && echo true || echo false)" >> $GITHUB_OUTPUT
-
-      - name: Setup Python
-        if: steps.check_input.outputs.has_input == 'true'
+      - if: steps.check_input.outputs.has_input == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Setup Node
-        if: steps.check_input.outputs.has_input == 'true'
+      - if: steps.check_input.outputs.has_input == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-
-      - name: Install System & Python Deps
-        if: steps.check_input.outputs.has_input == 'true'
+      - if: steps.check_input.outputs.has_input == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            ffmpeg libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 \
-            libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
-            libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 \
-            libasound2t64 || sudo apt-get install -y libasound2
+          sudo apt-get install -y ffmpeg libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 libasound2t64 || sudo apt-get install -y libasound2
           pip install -r requirements.txt
           npm install --no-audit
           npx remotion browser ensure
-
-      - name: Transcribe & Generate Vertical Scenes
-        if: steps.check_input.outputs.has_input == 'true'
+      - if: steps.check_input.outputs.has_input == 'true'
         env:
           INPUT_FOLDER: "input_short"
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -72,9 +58,7 @@ jobs:
           npx remotion still src/index.ts Main work/frame0_smoke.png --frame=0
           npx remotion bundle src/index.ts --public-dir public --out-dir build_bundle
           python scripts/plan_chunks.py
-
-      - name: Upload Short Bundle
-        if: steps.check_input.outputs.has_input == 'true'
+      - if: steps.check_input.outputs.has_input == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: prepared-short
@@ -95,6 +79,8 @@ jobs:
         chunk: ${{ fromJson(needs.plan_and_prepare.outputs.chunks_json) }}
     steps:
       - uses: actions/checkout@v4
+      - run: |
+          if [ -f setup_factory.py ]; then python setup_factory.py --no-git; fi
       - uses: actions/download-artifact@v4
         with:
           name: prepared-short
@@ -103,16 +89,11 @@ jobs:
           node-version: "22"
       - run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            ffmpeg libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 \
-            libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
-            libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 \
-            libasound2t64 || sudo apt-get install -y libasound2
+          sudo apt-get install -y ffmpeg libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 libasound2t64 || sudo apt-get install -y libasound2
           npm install --no-audit
           npx remotion browser ensure
           mkdir -p out
-          npx remotion render build_bundle Main out/chunk_${{ matrix.chunk.idx }}.mp4 \
-            --frames=${{ matrix.chunk.start }}-${{ matrix.chunk.end }} --muted --concurrency=2
+          npx remotion render build_bundle Main out/chunk_${{ matrix.chunk.idx }}.mp4 --frames=${{ matrix.chunk.start }}-${{ matrix.chunk.end }} --muted --concurrency=2
       - uses: actions/upload-artifact@v4
         with:
           name: short-chunk-${{ matrix.chunk.idx }}
@@ -124,6 +105,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: |
+          if [ -f setup_factory.py ]; then python setup_factory.py --no-git; fi
       - uses: actions/download-artifact@v4
         with:
           name: prepared-short

@@ -13,7 +13,6 @@ def main() -> None:
     scenes = plan.get("scenes", [])
     if not scenes:
         raise SystemExit("Plan contains 0 scenes.")
-
     for sc in scenes:
         f = SCENES_DIR / f"{sc['componentName']}.tsx"
         if not f.exists():
@@ -22,7 +21,6 @@ def main() -> None:
         for bad in ("<div", "<span", "useFrame", "useEffect", "useState", "from 'three'"):
             if bad in txt:
                 raise SystemExit(f"Scene {f.name} contains forbidden token: {bad}")
-
     print(f"[validate_scenes] PASSED: All {len(scenes)} blueprint scenes verified.")
 
 

@@ -1,13 +1,7 @@
 #!/usr/bin/env python3
 """
 CoreToGrid 2.5D Technical Blueprint Documentary Factory (v5.2).
-All-in-one single-file installer & cloud unpacker (--no-git).
-Includes:
-  - Elite 2.5D UI: Right 30% Dark-Glass Telemetry HUD + Bottom-Right StatCounter (decimals fixed)
-  - 2.5D shaded racks/transformers/cold plates, labeled coolant & power pipes, chapter tags, slammed stamps
-  - Rapid 4-6s layout rotation across 6 distinct technical layouts
-  - Calm auto-ducked BGM + 5 crisp SFX (whoosh, pop, tick, alert, impact) synced to cuts & peaks
-  - Fast Multi-Provider AI (Hydrogen/3.8 25s -> Ernie 5.5 Flash -> Groq 500 tok/s -> Heavy Nemotron)
+All-in-one installer & cloud unpacker (--no-git).
 """
 
 import shutil
@@ -46,13 +40,12 @@ FILES[".gitattributes"] = r'''
 FILES[".agents/skills/coretogrid-director/SKILL.md"] = r'''
 ---
 name: coretogrid-director
-description: Directs 2.5D technical CAD blueprint documentaries for CoreToGrid (AI hardware, 800kW racks, power grids) and builds visuals.txt or Remotion SVG scenes.
+description: Directs 2.5D technical CAD blueprint documentaries for CoreToGrid (AI hardware, 800kW racks, power grids).
 ---
 
 # CoreToGrid Technical Blueprint Director
 - Palette: Dark slate blueprint (#070C16), neon cyan coolant (#00F0FF), thermal red (#EF4444), HV amber (#F59E0B).
-- Layout discipline: Keep hero schematics in left 65% (x: 60..1240), place TelemetryHUD2D + StatCounter2D in right 30% (x: 1310..1850), label all pipes, rotate layouts every 4-6s.
-- Never run `npm install` or `remotion render` locally on low-RAM laptops; push to GitHub Actions.
+- Layout discipline: Keep hero schematics in left 65% (x: 60..1240), TelemetryHUD2D + StatCounter2D in right 30% (x: 1310..1850), label all pipes, rotate layouts every 4-6s.
 '''
 
 FILES["package.json"] = r'''
@@ -122,7 +115,7 @@ Config.setPixelFormat("yuv420p");
 
 FILES["input/visuals_EXAMPLE.txt"] = r'''
 # CoreToGrid Technical Blueprint Visual Directive
-# Rotate rapidly every 4-6s across: isometric_blueprint, spec_document, xray_cutaway, thermal_flow, us_grid_map, substation_grid, black_title_card
+# Rotate every 4-6s: isometric_blueprint, spec_document, xray_cutaway, thermal_flow, us_grid_map, substation_grid, black_title_card
 - Scene 1 [isometric_blueprint]: 2.5D Data Hall with right HUD (1,000 MW, 600 kW, $100B) & labeled 18C/45C pipes.
 - Scene 2 [black_title_card]: "The Air Cooling Wall"
 - Scene 3 [spec_document]: $100B Capex breakdown document.
@@ -183,6 +176,7 @@ OPENROUTER_HEAVY_MODELS = [
 ]
 
 _COOLDOWN_UNTIL: dict[str, float] = {}
+_FENCE = "\x60\x60\x60"
 
 
 def get_client() -> Optional[genai.Client]:
@@ -190,10 +184,7 @@ def get_client() -> Optional[genai.Client]:
     if not api_key:
         return None
     first_key = [k.strip() for k in api_key.split(",") if k.strip()][0]
-    return genai.Client(
-        api_key=first_key,
-        http_options=types.HttpOptions(timeout=25_000),
-    )
+    return genai.Client(api_key=first_key, http_options=types.HttpOptions(timeout=25_000))
 
 
 def _strip_think(raw: str) -> str:
@@ -202,12 +193,11 @@ def _strip_think(raw: str) -> str:
 
 def clean_json_text(raw: str) -> str:
     text = _strip_think(raw)
-    fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+    fence_match = re.search(_FENCE + r"(?:json)?\s*([\s\S]*?)" + _FENCE, text)
     if fence_match:
         text = fence_match.group(1).strip()
     if not text.startswith("{") and "{" in text and "}" in text:
-        start = text.find("{")
-        end = text.rfind("}")
+        start, end = text.find("{"), text.rfind("}")
         if end > start:
             text = text[start : end + 1]
     return text
@@ -215,7 +205,7 @@ def clean_json_text(raw: str) -> str:
 
 def clean_tsx_text(raw: str) -> str:
     text = _strip_think(raw)
-    fence_match = re.search(r"```(?:tsx|typescript|ts|jsx)?\s*([\s\S]*?)```", text)
+    fence_match = re.search(_FENCE + r"(?:tsx|typescript|ts|jsx)?\s*([\s\S]*?)" + _FENCE, text)
     if fence_match:
         text = fence_match.group(1).strip()
     return text
@@ -232,7 +222,7 @@ def _call_openai_compat(
 ) -> str:
     final_prompt = prompt
     if json_mode:
-        final_prompt += "\n\nCRITICAL: Return ONLY one valid raw JSON object starting with { and ending with }. No markdown fences or extra text."
+        final_prompt += "\n\nCRITICAL: Return ONLY one valid raw JSON object starting with { and ending with }. No markdown fences."
 
     payload: dict[str, Any] = {
         "model": model,
@@ -240,7 +230,6 @@ def _call_openai_compat(
         "max_tokens": 16384,
         "temperature": 0.2,
     }
-
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -249,12 +238,7 @@ def _call_openai_compat(
     if extra_headers:
         headers.update(extra_headers)
 
-    req = urllib.request.Request(
-        endpoint,
-        data=json.dumps(payload).encode("utf-8"),
-        headers=headers,
-        method="POST",
-    )
+    req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
             data = json.loads(resp.read().decode("utf-8"))
@@ -351,9 +335,7 @@ def generate_with_fallback(
                 if key in dead_models or _COOLDOWN_UNTIL.get(model_name, 0) > now:
                     continue
 
-                config_kwargs: dict[str, Any] = {
-                    "max_output_tokens": min(cap, max_output_tokens),
-                }
+                config_kwargs: dict[str, Any] = {"max_output_tokens": min(cap, max_output_tokens)}
                 if "gemini-4" not in model_name:
                     config_kwargs["temperature"] = temperature
                 if thinking_lvl:
@@ -362,14 +344,9 @@ def generate_with_fallback(
                     config_kwargs["response_mime_type"] = "application/json"
 
                 config = types.GenerateContentConfig(**config_kwargs)
-
                 try:
                     print(f"[ai_router] Priority -> {model_name} (think={thinking_lvl or 'off'})...", flush=True)
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=prompt_str,
-                        config=config,
-                    )
+                    response = client.models.generate_content(model=model_name, contents=prompt_str, config=config)
                     text = response.text or ""
                     if not text.strip():
                         raise RuntimeError(f"Empty response from {model_name}")
@@ -445,10 +422,7 @@ def git_commit_timestamp(path: Path) -> int:
     try:
         res = subprocess.run(
             ["git", "log", "-n", "1", "--format=%ct", "--", str(path.relative_to(ROOT))],
-            cwd=str(ROOT),
-            capture_output=True,
-            text=True,
-            check=False,
+            cwd=str(ROOT), capture_output=True, text=True, check=False,
         )
         val = (res.stdout or "").strip()
         if val.isdigit():
@@ -497,9 +471,7 @@ def transcribe_audio(wav_path: Path) -> Dict[str, Any]:
         vad_parameters={"min_silence_duration_ms": 380},
         initial_prompt=(
             "Nvidia Blackwell, GB200, NVLink spine, microchannel cold plates, liquid cooling, "
-            "dielectric fluid, CDU, cooling distribution unit, 800 kW, 600 kW, 1.12 PUE, "
-            "substation, high-voltage transformer, 345 kV, 500 kV, SMR nuclear reactor, "
-            "busbar, blind-mate quick disconnect, optical transceiver, CoWoS, TSMC 3nm."
+            "dielectric fluid, CDU, 800 kW, 600 kW, 1.12 PUE, substation, 345 kV, 500 kV, SMR nuclear reactor, busbar, CoWoS."
         ),
     )
 
@@ -509,21 +481,11 @@ def transcribe_audio(wav_path: Path) -> Dict[str, Any]:
         seg_words: List[Dict[str, Any]] = []
         if seg.words:
             for w in seg.words:
-                w_item = {
-                    "word": w.word.strip(),
-                    "start": round(float(w.start), 3),
-                    "end": round(float(w.end), 3),
-                }
+                w_item = {"word": w.word.strip(), "start": round(float(w.start), 3), "end": round(float(w.end), 3)}
                 if w_item["word"]:
                     words.append(w_item)
                     seg_words.append(w_item)
-        segments.append({
-            "id": seg.id,
-            "start": round(float(seg.start), 3),
-            "end": round(float(seg.end), 3),
-            "text": seg.text.strip(),
-            "words": seg_words,
-        })
+        segments.append({"id": seg.id, "start": round(float(seg.start), 3), "end": round(float(seg.end), 3), "text": seg.text.strip(), "words": seg_words})
 
     return {
         "language": info.language,
@@ -542,18 +504,9 @@ def analyze_beats(wav_path: Path) -> Dict[str, Any]:
     hop_length = 512
     rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=hop_length)[0]
     onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length)
+    combined = 0.65 * (rms / (np.max(rms) + 1e-8)) + 0.35 * (onset_env / (np.max(onset_env) + 1e-8))
 
-    rms_norm = rms / (np.max(rms) + 1e-8)
-    onset_norm = onset_env / (np.max(onset_env) + 1e-8)
-    combined = 0.65 * rms_norm + 0.35 * onset_norm
-
-    min_distance = int((1.8 * sr) / hop_length)
-    peaks, _ = find_peaks(
-        combined,
-        height=float(np.percentile(combined, 68)),
-        distance=max(1, min_distance),
-        prominence=0.09,
-    )
+    peaks, _ = find_peaks(combined, height=float(np.percentile(combined, 68)), distance=max(1, int((1.8 * sr) / hop_length)), prominence=0.09)
     peak_times = [round(float(librosa.frames_to_time(p, sr=sr, hop_length=hop_length)), 3) for p in peaks]
 
     tempo, _ = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr, hop_length=hop_length)
@@ -561,11 +514,7 @@ def analyze_beats(wav_path: Path) -> Dict[str, Any]:
     if bpm_val < 70 or bpm_val > 135:
         bpm_val = 105.0
 
-    return {
-        "duration_sec": round(duration_sec, 3),
-        "bpm": round(bpm_val, 1),
-        "emphasis_peaks": peak_times,
-    }
+    return {"duration_sec": round(duration_sec, 3), "bpm": round(bpm_val, 1), "emphasis_peaks": peak_times}
 
 
 def main() -> None:
@@ -620,15 +569,7 @@ BACKDROP_THEMES = [
     "black_title_card",
 ]
 
-CAMERA_MOVES = [
-    "push_in",
-    "pull_out",
-    "pan_right",
-    "pan_left",
-    "pan_up",
-    "shake_hit",
-]
-
+CAMERA_MOVES = ["push_in", "pull_out", "pan_right", "pan_left", "pan_up", "shake_hit"]
 SFX_CUES = ["whoosh", "pop", "tick", "alert", "impact"]
 
 BLUEPRINT_KIT_DOC = """
@@ -643,29 +584,13 @@ import {
 } from "../../components/CartoonKit2D";
 import type { Scene2DProps } from "../../types";
 
-Props & Layout Discipline (1920x1080 SVG, or 1080x1920 if isVertical):
-- ALWAYS render `<SceneBackdrop2D theme={props.backdropTheme} frame={props.frame} accentHex={props.accentHex} chapterTag={props.chapterTag} />` first!
-- ALWAYS wrap foreground inside `<Camera2D move={props.cameraMove} progress={props.progress} frame={props.frame} peakTimes={props.peakTimes} localTime={props.localTime}>`.
-- NEVER leave the right 30% empty on 16:9! Keep hero schematics/charts in x: 60..1240, and place `<TelemetryHUD2D x={isVertical ? 120 : 1310} y={isVertical ? 160 : 120} w={isVertical ? 840 : 540} ... />` on the right! (Bottom-right x=1580, y=815 is reserved for scene_plan.statCounter overlay!)
-- Component Quick Reference:
-  - DataHall25D: { accentHex?: string; frame: number; progress: number; isVertical?: boolean }
-  - SpecDocument2D: { x: number; y: number; w?: number; title: string; subtitle?: string; items: { label: string; value: string; pct: number; color?: string }[]; progress: number }
-  - USGridMap2D: { x: number; y: number; w?: number; h?: number; accentHex?: string; frame: number; progress: number }
-  - AnimatedFluidPipe2D: { d: string; color?: string; fluidColor?: string; strokeWidth?: number; label?: string; labelX?: number; labelY?: number; frame: number }
-  - MicrochannelColdPlate2D: { x: number; y: number; scale?: number; coolantTempC?: number; frame: number; progress: number }
-  - ServerRack800kW2D: { x: number; y: number; scale?: number; accentHex?: string; frame: number; progress: number }
-  - TransformerSubstation2D: { x: number; y: number; scale?: number; voltageKV?: number; frame: number }
-  - NuclearSMRVessel2D: { x: number; y: number; scale?: number; cherenkovGlow?: boolean; frame: number; progress: number }
-  - LineChart2D: { x: number; y: number; w?: number; h?: number; label?: string; startVal?: number; endVal?: number; prefix?: string; suffix?: string; decimals?: number; color?: string; progress: number }
-  - BarChart2D: { x: number; y: number; w?: number; h?: number; bars: { label: string; value: number; prefix?: string; suffix?: string; decimals?: number; color?: string }[]; progress: number }
-  - BalanceScale2D: { x: number; y: number; leftLabel: string; rightLabel: string; tiltDeg?: number; leftColor?: string; rightColor?: string; progress: number }
-  - TechnicalCallout2D: { x: number; y: number; text: string; subtext?: string; color?: string; localTime: number; delaySec?: number; arrowTo?: [number, number] }
-  - TitleCard2D: { text: string; progress: number; accentHex?: string }
-
-STRICT RULES:
-1. Export EXACTLY `export const Scene_XX: React.FC<Scene2DProps> = (props) => { ... }`.
-2. Return a single `<svg viewBox={props.isVertical ? "0 0 1080 1920" : "0 0 1920 1080"} style={{ width: "100%", height: "100%", display: "block" }}>`.
-3. NEVER put <div> or <span> inside <svg>. NEVER import `three`, `remotion`, `useEffect`, or `useState`.
+Layout Rules (1920x1080 SVG, or 1080x1920 when isVertical is true):
+- Render `<SceneBackdrop2D theme={props.backdropTheme} frame={props.frame} accentHex={props.accentHex} chapterTag={props.chapterTag} />` first.
+- Wrap foreground in `<Camera2D move={props.cameraMove} progress={props.progress} frame={props.frame} peakTimes={props.peakTimes} localTime={props.localTime}>`.
+- Keep hero visuals in left 65% (x: 60..1240), and fill right 30% with `<TelemetryHUD2D x={isVertical ? 120 : 1310} y={isVertical ? 160 : 120} w={isVertical ? 840 : 540} ... />`.
+- Export EXACTLY `export const Scene_XX: React.FC<Scene2DProps> = (props) => { ... }`.
+- Return single `<svg viewBox={props.isVertical ? "0 0 1080 1920" : "0 0 1920 1080"} style={{ width: "100%", height: "100%", display: "block" }}>`.
+- NEVER use <div>, <span>, `three`, `remotion`, `useEffect`, or `useState`.
 """
 
 FORBIDDEN_CODE_PATTERNS = (
@@ -681,10 +606,7 @@ def get_input_dir() -> Path:
 def load_visuals_prompt(input_dir: Path) -> str:
     if not input_dir.exists():
         return ""
-    candidates = [
-        p for p in input_dir.iterdir()
-        if p.is_file() and p.suffix.lower() == ".txt" and p.name != "visuals_EXAMPLE.txt"
-    ]
+    candidates = [p for p in input_dir.iterdir() if p.is_file() and p.suffix.lower() == ".txt" and p.name != "visuals_EXAMPLE.txt"]
     if not candidates:
         return ""
     for p in candidates:
@@ -768,7 +690,7 @@ def sanitize_scene_tsx(code: str, scene_num: int) -> str:
     txt = clean_tsx_text(code)
     for bad in FORBIDDEN_CODE_PATTERNS:
         if bad in txt:
-            raise ValueError(f"Forbidden token '{bad}' found in Scene_{scene_num:02d}")
+            raise ValueError(f"Forbidden token '{bad}' in Scene_{scene_num:02d}")
     expected = f"Scene_{scene_num:02d}"
     if expected not in txt:
         txt = re.sub(r"export\s+const\s+Scene_\d+\s*:", f"export const {expected}:", txt)
@@ -840,30 +762,22 @@ def main() -> None:
 
     storyboard_prompt = f"""
 You are the Lead Visual Director for CoreToGrid (70%+ retention 2.5D Technical Blueprint Documentary).
-Total Duration: {duration_sec:.2f}s | Target Scenes: {scene_count} (CHANGE VISUAL LAYOUT EVERY 4 TO 6 SECONDS — NEVER HOLD ONE SCENE LONG!)
+Total Duration: {duration_sec:.2f}s | Target Scenes: {scene_count} (CHANGE VISUAL LAYOUT EVERY 4 TO 6 SECONDS!)
 
 SEGMENTS:
 {json.dumps([{"start": s["start"], "end": s["end"], "text": s["text"]} for s in transcript.get("segments", [])], ensure_ascii=False)}
 
 VOCAL EMPHASIS PEAKS (seconds): {json.dumps(peaks[:100])}
-
-USER DIRECTIVES:
-{visuals_prompt or "Rapidly rotate across: (1) 2.5D Data Hall + Right HUD + Labeled Pipes, (2) Dark-Glass Capex Spec Document, (3) Comparison Bar/Line Chart, (4) Thermal Cold Plate Cross-Section, (5) US Grid Map + Transformer Nodes, (6) Full-Screen Kinetic Title Card."}
-
+USER DIRECTIVES: {visuals_prompt or "Rotate rapidly across: (1) DataHall25D + Right HUD + Labeled Pipes, (2) SpecDocument2D Capex Split, (3) BarChart2D / LineChart2D, (4) Cold Plate Cross-Section, (5) USGridMap2D + Transformer Nodes, (6) TitleCard2D."}
 AVAILABLE THEMES: {json.dumps(BACKDROP_THEMES)}
 AVAILABLE CAMERA MOVES: {json.dumps(CAMERA_MOVES)}
 AVAILABLE SFX: {json.dumps(SFX_CUES)}
 
-Return JSON with "scenes" array containing {scene_count} scenes. Every scene MUST specify:
-- chapterTag: e.g. "01 // 1-GIGAWATT DATA HALL", "02 // DIRECT-TO-CHIP COOLING", "03 // NATIONAL GRID QUEUE"
-- visualConcept & visualSpec: ALWAYS include right-side Telemetry HUD + labeled pipes (CHILLED COOLANT IN -> 18C, HEATED RETURN -> 45C, 345 kV POWER BUS) on schematic scenes
-- backdropTheme (never repeat the same theme twice in a row!), cameraMove, transition ("slide_left"|"slide_up"|"wipe_right"|"zoom_dissolve"|"flash_cut"), sfx, accentHex ("#00F0FF"|"#EF4444"|"#F59E0B"|"#10B981")
-- titleText: punchy 2-5 word question/statement if backdropTheme is black_title_card
-- stampText: punchy 2-word blueprint stamp (e.g. "600 KW HEAT", "3-YEAR WAIT", "OVERLOAD RISK")
-- stampColor: "#EF4444" or "#F59E0B" or "#00F0FF"
-- stampTriggerSec: float seconds into scene aligned to spoken peak
-- statCounter: {{"label": "METRIC", "startVal": 0, "endVal": 1.12, "prefix": "", "suffix": " PUE", "decimals": 2, "color": "#00F0FF", "triggerSec": 0.2}} (Use decimals: 2 for 1.12 PUE, decimals: 0 for 600 kW or $100B!)
-- endSec: float timestamp (keep each scene 3.8 to 6.2s long!)
+Return JSON with "scenes" array containing {scene_count} scenes. Every scene MUST have:
+- chapterTag, visualConcept, visualSpec, backdropTheme (no repeats), cameraMove, transition ("slide_left"|"slide_up"|"wipe_right"|"zoom_dissolve"|"flash_cut"), sfx, accentHex, titleText
+- stampText (2-word stamp like "600 KW HEAT"), stampColor, stampTriggerSec
+- statCounter: {{"label": "METRIC", "startVal": 0, "endVal": 1.12, "prefix": "", "suffix": " PUE", "decimals": 2, "color": "#00F0FF", "triggerSec": 0.2}}
+- endSec (3.8 to 6.2s per scene)
 """
 
     client = get_client()
@@ -914,16 +828,7 @@ Return JSON with "scenes" array containing {scene_count} scenes. Every scene MUS
             "localPeakTimes": local_peaks,
         })
 
-    plan = {
-        "channel": "CoreToGrid",
-        "fps": fps,
-        "width": width,
-        "height": height,
-        "totalDurationSec": round(duration_sec, 3),
-        "bpm": bpm,
-        "emphasisPeaksSec": peaks,
-        "scenes": scenes,
-    }
+    plan = {"channel": "CoreToGrid", "fps": fps, "width": width, "height": height, "totalDurationSec": round(duration_sec, 3), "bpm": bpm, "emphasisPeaksSec": peaks, "scenes": scenes}
     (WORK_DIR / "scene_plan.json").write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
 
     SCENES_DIR.mkdir(parents=True, exist_ok=True)
@@ -934,14 +839,11 @@ Return JSON with "scenes" array containing {scene_count} scenes. Every scene MUS
     for b_start in range(0, len(scenes), batch_size):
         batch = scenes[b_start : b_start + batch_size]
         code_prompt = f"""
-You are an Elite 2.5D Technical Vector Animator coding React SVG scenes in Remotion.
-Canvas: {width}x{height} SVG.
+Code these React SVG scenes in Remotion ({width}x{height}). Keep Right 30% filled with TelemetryHUD2D!
 {BLUEPRINT_KIT_DOC}
-
-BATCH TO ILLUSTRATE (Never repeat consecutive layouts! Keep Right 30% filled with TelemetryHUD2D!):
+BATCH:
 {json.dumps([{"componentName": s["componentName"], "chapterTag": s["chapterTag"], "visualConcept": s["visualConcept"], "visualSpec": s["visualSpec"], "backdropTheme": s["backdropTheme"], "accentHex": s["accentHex"], "titleText": s["titleText"]} for s in batch], indent=2)}
-
-Return ONLY JSON mapping each componentName (e.g. "Scene_01") to its complete TSX code starting with 'import React from "react";'.
+Return ONLY JSON mapping each componentName to its TSX file string.
 """
         generated_map = {}
         try:
@@ -961,39 +863,31 @@ Return ONLY JSON mapping each componentName (e.g. "Scene_01") to its complete TS
                 out_file.write_text(sanitize_scene_tsx(code, s_num), encoding="utf-8")
                 print(f"  + Illustrated {cname}.tsx [{sc['backdropTheme']}]")
             except Exception:
-                out_file.write_text(
-                    build_fallback_scene_tsx(s_num, sc["backdropTheme"], sc["accentHex"], sc["visualConcept"], sc["titleText"]),
-                    encoding="utf-8",
-                )
+                out_file.write_text(build_fallback_scene_tsx(s_num, sc["backdropTheme"], sc["accentHex"], sc["visualConcept"], sc["titleText"]), encoding="utf-8")
 
         if b_start + batch_size < len(scenes):
             time.sleep(10)
 
     imports = [f'import {{ {s["componentName"]} }} from "./scenes/{s["componentName"]}";' for s in scenes]
     entries = [f'  {s["id"]}: {s["componentName"]},' for s in scenes]
-    registry_ts = 'import type React from "react";\nimport type { Scene2DProps } from "../types";\n' + "\n".join(imports) + "\n\nexport const SCENE_REGISTRY: Record<string, React.FC<Scene2DProps>> = {\n" + "\n".join(entries) + "\n};\n"
-    (GENERATED_DIR / "SceneRegistry.ts").write_text(registry_ts, encoding="utf-8")
-
-    (GENERATED_DIR / "ScenesData.ts").write_text(
-        f'import type {{ CartoonPlan }} from "../types";\n\nexport const SCENE_PLAN: CartoonPlan = {json.dumps(plan, indent=2, ensure_ascii=False)};\n',
+    (GENERATED_DIR / "SceneRegistry.ts").write_text(
+        'import type React from "react";\nimport type { Scene2DProps } from "../types";\n' + "\n".join(imports) + "\n\nexport const SCENE_REGISTRY: Record<string, React.FC<Scene2DProps>> = {\n" + "\n".join(entries) + "\n};\n",
         encoding="utf-8",
     )
+    (GENERATED_DIR / "ScenesData.ts").write_text(f'import type {{ CartoonPlan }} from "../types";\n\nexport const SCENE_PLAN: CartoonPlan = {json.dumps(plan, indent=2, ensure_ascii=False)};\n', encoding="utf-8")
 
     total_frames = max(60, int(round(duration_sec * fps)))
-    timeline_tsx = f"""import React from "react";
+    (GENERATED_DIR / "GeneratedTimeline.tsx").write_text(
+        f"""import React from "react";
 import {{ AbsoluteFill }} from "remotion";
 import {{ CartoonStage2D }} from "../components/CartoonStage2D";
 import {{ SCENE_PLAN }} from "./ScenesData";
 
 export const GENERATED_TOTAL_FRAMES = {total_frames};
-
-export const GeneratedTimeline: React.FC = () => (
-  <AbsoluteFill>
-    <CartoonStage2D plan={{SCENE_PLAN}} />
-  </AbsoluteFill>
-);
-"""
-    (GENERATED_DIR / "GeneratedTimeline.tsx").write_text(timeline_tsx, encoding="utf-8")
+export const GeneratedTimeline: React.FC = () => (<AbsoluteFill><CartoonStage2D plan={{SCENE_PLAN}} /></AbsoluteFill>);
+""",
+        encoding="utf-8",
+    )
 
     self_heal_scenes(client, plan)
     print(f"[generate_scenes] Complete: {len(scenes)} rapid-cut 2.5D blueprint scenes verified!")
@@ -1019,7 +913,6 @@ def main() -> None:
     scenes = plan.get("scenes", [])
     if not scenes:
         raise SystemExit("Plan contains 0 scenes.")
-
     for sc in scenes:
         f = SCENES_DIR / f"{sc['componentName']}.tsx"
         if not f.exists():
@@ -1028,7 +921,6 @@ def main() -> None:
         for bad in ("<div", "<span", "useFrame", "useEffect", "useState", "from 'three'"):
             if bad in txt:
                 raise SystemExit(f"Scene {f.name} contains forbidden token: {bad}")
-
     print(f"[validate_scenes] PASSED: All {len(scenes)} blueprint scenes verified.")
 
 
@@ -1052,13 +944,11 @@ SAMPLE_RATE = 48000
 
 
 def lowpass(signal: np.ndarray, cutoff_hz: float, order: int = 4) -> np.ndarray:
-    sos = butter(order, cutoff_hz, btype="low", fs=SAMPLE_RATE, output="sos")
-    return sosfilt(sos, signal)
+    return sosfilt(butter(order, cutoff_hz, btype="low", fs=SAMPLE_RATE, output="sos"), signal)
 
 
 def bandpass(signal: np.ndarray, low: float, high: float) -> np.ndarray:
-    sos = butter(3, [low, high], btype="band", fs=SAMPLE_RATE, output="sos")
-    return sosfilt(sos, signal)
+    return sosfilt(butter(3, [low, high], btype="band", fs=SAMPLE_RATE, output="sos"), signal)
 
 
 def synthesize_calm_underscore(n_samples: int, bpm: float) -> np.ndarray:
@@ -1071,31 +961,22 @@ def synthesize_calm_underscore(n_samples: int, bpm: float) -> np.ndarray:
         [110.00, 164.81, 220.00, 261.63],
     ]
     bar_idx = (t / bar_sec).astype(int) % len(chords)
-    bar_phase = (t % bar_sec) / bar_sec
-    env = np.sin(np.pi * np.clip(bar_phase, 0.0, 1.0)) ** 0.5
-
-    left = np.zeros(n_samples, dtype=np.float64)
-    right = np.zeros(n_samples, dtype=np.float64)
+    env = np.sin(np.pi * np.clip((t % bar_sec) / bar_sec, 0.0, 1.0)) ** 0.5
+    left, right = np.zeros(n_samples), np.zeros(n_samples)
     for c_i, freqs in enumerate(chords):
         mask = (bar_idx == c_i).astype(np.float64)
-        sig_l = np.zeros(n_samples, dtype=np.float64)
-        sig_r = np.zeros(n_samples, dtype=np.float64)
+        sl, sr_sig = np.zeros(n_samples), np.zeros(n_samples)
         for v_i, freq in enumerate(freqs):
-            detune = 1.002 if v_i % 2 == 0 else 0.998
-            sig_l += 0.22 * np.sin(2.0 * np.pi * freq * t)
-            sig_r += 0.22 * np.sin(2.0 * np.pi * freq * detune * t + 0.35)
-        left += mask * env * sig_l
-        right += mask * env * sig_r
+            sl += 0.22 * np.sin(2.0 * np.pi * freq * t)
+            sr_sig += 0.22 * np.sin(2.0 * np.pi * freq * (1.002 if v_i % 2 == 0 else 0.998) * t + 0.35)
+        left += mask * env * sl
+        right += mask * env * sr_sig
 
     beat_period = 60.0 / bpm
     pulse = np.sin(2.0 * np.pi * 146.83 * t) * np.exp(-((t % beat_period) / beat_period) * 14.0) * 0.10
-    left = lowpass(left + pulse, 880.0)
-    right = lowpass(right + pulse, 880.0)
-    stereo = np.column_stack([left, right])
+    stereo = np.column_stack([lowpass(left + pulse, 880.0), lowpass(right + pulse, 880.0)])
     stereo = stereo / (float(np.max(np.abs(stereo))) + 1e-9)
-
-    fade_in = min(n_samples, int(1.5 * SAMPLE_RATE))
-    fade_out = min(n_samples, int(2.0 * SAMPLE_RATE))
+    fade_in, fade_out = min(n_samples, int(1.5 * SAMPLE_RATE)), min(n_samples, int(2.0 * SAMPLE_RATE))
     if fade_in > 0:
         stereo[:fade_in] *= np.linspace(0.0, 1.0, fade_in)[:, None]
     if fade_out > 0:
@@ -1105,16 +986,13 @@ def synthesize_calm_underscore(n_samples: int, bpm: float) -> np.ndarray:
 
 def load_or_synthesize_sfx() -> dict[str, np.ndarray]:
     rng = np.random.default_rng(42)
-
     nw = int(0.30 * SAMPLE_RATE)
-    tw = np.arange(nw) / SAMPLE_RATE
-    w = bandpass(rng.normal(0.0, 1.0, nw), 320.0, 2600.0) * (np.sin(np.pi * tw / 0.30) ** 1.5)
+    w = bandpass(rng.normal(0.0, 1.0, nw), 320.0, 2600.0) * (np.sin(np.pi * (np.arange(nw) / SAMPLE_RATE) / 0.30) ** 1.5)
     whoosh = np.column_stack([w, w * 0.94]) / (np.max(np.abs(w)) + 1e-9)
 
     npop = int(0.10 * SAMPLE_RATE)
     tp = np.arange(npop) / SAMPLE_RATE
-    fp = 420.0 + 520.0 * (1.0 - np.exp(-tp * 40.0))
-    p = np.sin(2.0 * np.pi * np.cumsum(fp) / SAMPLE_RATE) * np.exp(-tp * 34.0)
+    p = np.sin(2.0 * np.pi * np.cumsum(420.0 + 520.0 * (1.0 - np.exp(-tp * 40.0))) / SAMPLE_RATE) * np.exp(-tp * 34.0)
     pop = np.column_stack([p, p]) / (np.max(np.abs(p)) + 1e-9)
 
     nt = int(0.06 * SAMPLE_RATE)
@@ -1129,18 +1007,10 @@ def load_or_synthesize_sfx() -> dict[str, np.ndarray]:
 
     ni = int(0.45 * SAMPLE_RATE)
     ti = np.arange(ni) / SAMPLE_RATE
-    fi = 100.0 * np.exp(-ti * 4.8) + 36.0
-    im = np.sin(2.0 * np.pi * np.cumsum(fi) / SAMPLE_RATE) * np.exp(-ti * 5.8) * np.minimum(1.0, ti / 0.01)
+    im = np.sin(2.0 * np.pi * np.cumsum(100.0 * np.exp(-ti * 4.8) + 36.0) / SAMPLE_RATE) * np.exp(-ti * 5.8) * np.minimum(1.0, ti / 0.01)
     impact = np.column_stack([im, im]) / (np.max(np.abs(im)) + 1e-9)
 
-    bank = {
-        "whoosh": whoosh * 0.14,
-        "pop": pop * 0.16,
-        "tick": tick * 0.12,
-        "alert": alert * 0.14,
-        "impact": impact * 0.22,
-    }
-
+    bank = {"whoosh": whoosh * 0.14, "pop": pop * 0.16, "tick": tick * 0.12, "alert": alert * 0.14, "impact": impact * 0.22}
     for name in list(bank.keys()):
         custom_wav = SFX_DIR / f"{name}.wav"
         if custom_wav.exists():
@@ -1148,17 +1018,15 @@ def load_or_synthesize_sfx() -> dict[str, np.ndarray]:
             if sr == SAMPLE_RATE:
                 if data.ndim == 1:
                     data = np.column_stack([data, data])
-                peak = float(np.max(np.abs(data))) + 1e-9
-                bank[name] = (data / peak) * 0.18
+                bank[name] = (data / (float(np.max(np.abs(data))) + 1e-9)) * 0.18
     return bank
 
 
 def place_sfx(mix: np.ndarray, snd: np.ndarray, sec: float) -> None:
-    n_samples = len(mix)
-    start_idx = max(0, int(sec * SAMPLE_RATE))
-    end_idx = min(n_samples, start_idx + len(snd))
-    if end_idx > start_idx:
-        mix[start_idx:end_idx] += snd[: end_idx - start_idx]
+    s = max(0, int(sec * SAMPLE_RATE))
+    e = min(len(mix), s + len(snd))
+    if e > s:
+        mix[s:e] += snd[: e - s]
 
 
 def main() -> None:
@@ -1169,45 +1037,33 @@ def main() -> None:
 
     n_samples = len(vo)
     vo_stereo = np.column_stack([vo, vo])
-
     include_bgm = os.environ.get("INCLUDE_BGM", "true").lower() == "true"
+
     if include_bgm:
-        abs_vo = np.abs(vo)
-        smooth_env = lowpass(abs_vo, 3.0)
+        smooth_env = lowpass(np.abs(vo), 3.0)
         speech_active = np.clip(smooth_env / (np.percentile(smooth_env, 90) + 1e-6), 0.0, 1.0)
         duck_gain = 0.085 - 0.048 * speech_active
-        bgm = synthesize_calm_underscore(n_samples, float(plan.get("bpm", 105.0)))
-        mix = vo_stereo * 0.92 + bgm * duck_gain[:, None]
+        mix = vo_stereo * 0.92 + synthesize_calm_underscore(n_samples, float(plan.get("bpm", 105.0))) * duck_gain[:, None]
     else:
         mix = vo_stereo * 0.94
 
     bank = load_or_synthesize_sfx()
-
     for sc in plan.get("scenes", []):
-        cue = sc.get("sfx", "whoosh")
-        place_sfx(mix, bank.get(cue, bank["whoosh"]), float(sc["startSec"]))
+        place_sfx(mix, bank.get(sc.get("sfx", "whoosh"), bank["whoosh"]), float(sc["startSec"]))
         if sc.get("statCounter"):
             place_sfx(mix, bank["pop"], float(sc["startSec"]) + float(sc["statCounter"].get("triggerSec", 0.15)))
         if sc.get("stampText"):
             place_sfx(mix, bank["alert"], float(sc["startSec"]) + float(sc.get("stampTriggerSec", 0.65)))
 
-    peaks = plan.get("emphasisPeaksSec", [])
-    for idx, p_sec in enumerate(peaks):
-        peak_cue = "impact" if idx % 5 == 0 else "tick"
-        place_sfx(mix, bank[peak_cue], float(p_sec))
+    for idx, p_sec in enumerate(plan.get("emphasisPeaksSec", [])):
+        place_sfx(mix, bank["impact" if idx % 5 == 0 else "tick"], float(p_sec))
 
     mix = np.tanh(mix * 0.95)
-    master_m4a = WORK_DIR / "master_audio.m4a"
-    tmp_wav = WORK_DIR / "temp_master.wav"
+    master_m4a, tmp_wav = WORK_DIR / "master_audio.m4a", WORK_DIR / "temp_master.wav"
     sf.write(str(tmp_wav), mix, SAMPLE_RATE, subtype="PCM_16")
-
-    subprocess.run([
-        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-        "-i", str(tmp_wav), "-c:a", "aac", "-b:a", "192k", "-ar", str(SAMPLE_RATE),
-        str(master_m4a)
-    ], check=True)
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(tmp_wav), "-c:a", "aac", "-b:a", "192k", "-ar", str(SAMPLE_RATE), str(master_m4a)], check=True)
     tmp_wav.unlink(missing_ok=True)
-    print(f"[mix_audio] Master mix complete: {n_samples / SAMPLE_RATE:.2f}s (BGM={include_bgm}, 5 SFX synced to cuts & peaks).")
+    print(f"[mix_audio] Master mix complete: {n_samples / SAMPLE_RATE:.2f}s (BGM={include_bgm}).")
 
 
 if __name__ == "__main__":
@@ -1232,35 +1088,24 @@ def main() -> None:
     force = os.environ.get("FORCE_WORKERS", "auto").strip().lower()
     if force.isdigit():
         workers = int(force)
+    elif total_frames <= 1800:
+        workers = 4
+    elif total_frames <= 5400:
+        workers = 8
+    elif total_frames <= 13500:
+        workers = 14
     else:
-        if total_frames <= 1800:
-            workers = 4
-        elif total_frames <= 5400:
-            workers = 8
-        elif total_frames <= 13500:
-            workers = 14
-        else:
-            workers = 20
+        workers = 20
 
     workers = min(workers, total_frames)
     chunk_size = math.ceil(total_frames / workers)
-
-    chunks = []
-    for idx in range(workers):
-        start_f = idx * chunk_size
-        end_f = min(total_frames - 1, (idx + 1) * chunk_size - 1)
-        if start_f <= end_f:
-            chunks.append({"idx": idx, "start": start_f, "end": end_f})
-
-    chunks_json = json.dumps(chunks)
+    chunks = [{"idx": i, "start": i * chunk_size, "end": min(total_frames - 1, (i + 1) * chunk_size - 1)} for i in range(workers) if i * chunk_size <= total_frames - 1]
     print(f"[plan_chunks] total_frames={total_frames}, parallel_workers={len(chunks)}")
 
     gh_out = os.environ.get("GITHUB_OUTPUT")
     if gh_out:
         with open(gh_out, "a", encoding="utf-8") as f:
-            f.write(f"total_frames={total_frames}\n")
-            f.write(f"worker_count={len(chunks)}\n")
-            f.write(f"chunks_json={chunks_json}\n")
+            f.write(f"total_frames={total_frames}\nworker_count={len(chunks)}\nchunks_json={json.dumps(chunks)}\n")
 
 
 if __name__ == "__main__":
@@ -1274,9 +1119,7 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CHUNKS_DIR = ROOT / "chunks"
-WORK_DIR = ROOT / "work"
-OUT_DIR = ROOT / "out"
+CHUNKS_DIR, WORK_DIR, OUT_DIR = ROOT / "chunks", ROOT / "work", ROOT / "out"
 
 
 def chunk_index(p: Path) -> int:
@@ -1295,22 +1138,14 @@ def main() -> None:
         for c in chunks:
             f.write(f"file '{c.resolve().as_posix()}'\n")
 
-    video_format = os.environ.get("VIDEO_FORMAT", "long_16_9").strip()
-    out_name = "final_short.mp4" if video_format == "short_9_16" else "final_video.mp4"
+    out_name = "final_short.mp4" if os.environ.get("VIDEO_FORMAT", "long_16_9").strip() == "short_9_16" else "final_video.mp4"
     final_mp4 = OUT_DIR / out_name
-    master_audio = WORK_DIR / "master_audio.m4a"
-
-    print(f"[stitch_chunks] Joining {len(chunks)} chunks -> {final_mp4}")
     subprocess.run([
         "ffmpeg", "-y", "-hide_banner", "-loglevel", "warning",
-        "-f", "concat", "-safe", "0", "-i", str(list_file),
-        "-i", str(master_audio),
-        "-map", "0:v:0", "-map", "1:a:0",
-        "-c:v", "copy", "-c:a", "copy",
-        "-movflags", "+faststart", "-shortest",
-        str(final_mp4)
+        "-f", "concat", "-safe", "0", "-i", str(list_file), "-i", str(WORK_DIR / "master_audio.m4a"),
+        "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "copy", "-movflags", "+faststart", "-shortest", str(final_mp4)
     ], check=True)
-    print(f"[stitch_chunks] SUCCESS! Video exported: {final_mp4} ({final_mp4.stat().st_size / (1024*1024):.1f} MB)")
+    print(f"[stitch_chunks] SUCCESS! Exported {final_mp4} ({final_mp4.stat().st_size / (1024*1024):.1f} MB)")
 
 
 if __name__ == "__main__":
@@ -1319,32 +1154,12 @@ if __name__ == "__main__":
 
 FILES["src/types.ts"] = r'''
 export type BackdropTheme =
-  | "isometric_blueprint"
-  | "xray_cutaway"
-  | "substation_grid"
-  | "cleanroom_fab"
-  | "thermal_flow"
-  | "server_corridor"
-  | "dark_industrial"
-  | "spec_document"
-  | "us_grid_map"
-  | "black_title_card"
-  | "split_3panel";
+  | "isometric_blueprint" | "xray_cutaway" | "substation_grid" | "cleanroom_fab"
+  | "thermal_flow" | "server_corridor" | "dark_industrial" | "spec_document"
+  | "us_grid_map" | "black_title_card" | "split_3panel";
 
-export type CameraMove2D =
-  | "push_in"
-  | "pull_out"
-  | "pan_right"
-  | "pan_left"
-  | "pan_up"
-  | "shake_hit";
-
-export type Transition2D =
-  | "slide_left"
-  | "slide_up"
-  | "wipe_right"
-  | "zoom_dissolve"
-  | "flash_cut";
+export type CameraMove2D = "push_in" | "pull_out" | "pan_right" | "pan_left" | "pan_up" | "shake_hit";
+export type Transition2D = "slide_left" | "slide_up" | "wipe_right" | "zoom_dissolve" | "flash_cut";
 
 export interface StatCounterSpec {
   label: string;
@@ -1413,17 +1228,12 @@ import type { BackdropTheme, CameraMove2D } from "../types";
 
 const { fontFamily: UI_FONT } = loadSpaceGrotesk("normal", { weights: ["600", "700"], subsets: ["latin"] });
 const { fontFamily: MONO_FONT } = loadJetBrainsMono("normal", { weights: ["500", "700"], subsets: ["latin"] });
-
 const INK = "#060A12";
 const BLUEPRINT_LINE = "#18243A";
 
 function formatNumber(val: number, decimals = 0, prefix = "", suffix = ""): string {
   const fixed = Number(val.toFixed(decimals));
-  const formatted = fixed.toLocaleString("en-US", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
-  return `${prefix}${formatted}${suffix}`;
+  return `${prefix}${fixed.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}${suffix}`;
 }
 
 export const SceneBackdrop2D: React.FC<{
@@ -1432,95 +1242,53 @@ export const SceneBackdrop2D: React.FC<{
   accentHex?: string;
   chapterTag?: string;
 }> = ({ theme, frame, accentHex = "#00F0FF", chapterTag = "01 // CORE TO GRID" }) => {
-  const showChapterPill = theme !== "black_title_card";
-  const pillW = Math.max(320, chapterTag.length * 14 + 70);
-
-  const chapterOverlay = showChapterPill ? (
-    <g transform="translate(52 38)">
-      <rect x={0} y={0} width={pillW} height={46} rx={8} fill="#09101E" fillOpacity={0.94} stroke={accentHex} strokeWidth={2} />
-      <circle cx={24} cy={23} r={6} fill={accentHex} opacity={0.6 + 0.4 * Math.sin(frame * 0.25)} />
-      <text x={44} y={29} fill="#F8FAFC" fontFamily={MONO_FONT} fontSize={19} fontWeight={700} letterSpacing={1}>
-        {chapterTag.toUpperCase()}
-      </text>
-    </g>
-  ) : null;
-
   if (theme === "black_title_card") {
     return <rect x={-100} y={-100} width={2200} height={2200} fill="#04070E" />;
   }
+  const pillW = Math.max(320, chapterTag.length * 14 + 70);
+  const chapterOverlay = (
+    <g transform="translate(52 38)">
+      <rect x={0} y={0} width={pillW} height={46} rx={8} fill="#09101E" fillOpacity={0.94} stroke={accentHex} strokeWidth={2} />
+      <circle cx={24} cy={23} r={6} fill={accentHex} opacity={0.6 + 0.4 * Math.sin(frame * 0.25)} />
+      <text x={44} y={29} fill="#F8FAFC" fontFamily={MONO_FONT} fontSize={19} fontWeight={700} letterSpacing={1}>{chapterTag.toUpperCase()}</text>
+    </g>
+  );
 
   if (theme === "isometric_blueprint" || theme === "thermal_flow") {
     return (
       <g>
         <rect x={-100} y={-100} width={2200} height={2200} fill="#070C16" />
-        {Array.from({ length: 30 }).map((_, i) => (
-          <line key={`i1_${i}`} x1={-200 + i * 120} y1={-100} x2={-200 + i * 120 + 1200} y2={2100} stroke={BLUEPRINT_LINE} strokeWidth={1.5} strokeDasharray="4 8" />
-        ))}
-        {Array.from({ length: 30 }).map((_, i) => (
-          <line key={`i2_${i}`} x1={2200 - i * 120} y1={-100} x2={2200 - i * 120 - 1200} y2={2100} stroke={BLUEPRINT_LINE} strokeWidth={1.5} strokeDasharray="4 8" />
-        ))}
+        {Array.from({ length: 30 }).map((_, i) => <line key={`a${i}`} x1={-200 + i * 120} y1={-100} x2={-200 + i * 120 + 1200} y2={2100} stroke={BLUEPRINT_LINE} strokeWidth={1.5} strokeDasharray="4 8" />)}
+        {Array.from({ length: 30 }).map((_, i) => <line key={`b${i}`} x1={2200 - i * 120} y1={-100} x2={2200 - i * 120 - 1200} y2={2100} stroke={BLUEPRINT_LINE} strokeWidth={1.5} strokeDasharray="4 8" />)}
         <rect x={36} y={24} width={1848} height={1032} rx={12} fill="none" stroke="#1E293B" strokeWidth={2} />
         {chapterOverlay}
       </g>
     );
   }
-
-  if (theme === "spec_document") {
-    return (
-      <g>
-        <rect x={-100} y={-100} width={2200} height={2200} fill="#09101C" />
-        {Array.from({ length: 24 }).map((_, i) => (
-          <line key={`sg_${i}`} x1={i * 90} y1={-50} x2={i * 90} y2={2050} stroke="#131F35" strokeWidth={1.5} />
-        ))}
-        {chapterOverlay}
-      </g>
-    );
-  }
-
-  if (theme === "us_grid_map") {
-    return (
-      <g>
-        <rect x={-100} y={-100} width={2200} height={2200} fill="#060B15" />
-        {Array.from({ length: 16 }).map((_, i) => (
-          <line key={`mg_${i}`} x1={i * 140} y1={-50} x2={i * 140} y2={2050} stroke="#111C30" strokeWidth={1.5} strokeDasharray="6 10" />
-        ))}
-        {chapterOverlay}
-      </g>
-    );
-  }
-
-  if (theme === "xray_cutaway" || theme === "split_3panel") {
+  if (theme === "spec_document" || theme === "us_grid_map" || theme === "xray_cutaway" || theme === "split_3panel") {
     return (
       <g>
         <rect x={-100} y={-100} width={2200} height={2200} fill="#08101E" />
-        {Array.from({ length: 24 }).map((_, i) => (
-          <line key={`xr_${i}`} x1={i * 90} y1={-50} x2={i * 90} y2={2050} stroke="#132036" strokeWidth={1.5} />
-        ))}
-        <rect x={44} y={28} width={1832} height={1024} fill="none" stroke={accentHex} strokeWidth={2} strokeOpacity={0.25} strokeDasharray="10 8" />
+        {Array.from({ length: 24 }).map((_, i) => <line key={i} x1={i * 90} y1={-50} x2={i * 90} y2={2050} stroke="#132036" strokeWidth={1.5} />)}
+        <rect x={44} y={28} width={1832} height={1024} fill="none" stroke={accentHex} strokeWidth={2} strokeOpacity={0.22} strokeDasharray="10 8" />
         {chapterOverlay}
       </g>
     );
   }
-
   if (theme === "substation_grid") {
     return (
       <g>
         <rect x={-100} y={-100} width={2200} height={2200} fill="#080C16" />
         <rect x={-50} y={770} width={2100} height={1300} fill="#0F172A" stroke={INK} strokeWidth={4} />
-        {[-40, 20, 80].map((yOff, i) => (
-          <line key={i} x1={-100} y1={260 + yOff} x2={2100} y2={260 + yOff} stroke="#F59E0B" strokeWidth={3} strokeDasharray="18 12" strokeDashoffset={-frame * 2.5} />
-        ))}
+        {[-40, 20, 80].map((yOff, i) => <line key={i} x1={-100} y1={260 + yOff} x2={2100} y2={260 + yOff} stroke="#F59E0B" strokeWidth={3} strokeDasharray="18 12" strokeDashoffset={-frame * 2.5} />)}
         {chapterOverlay}
       </g>
     );
   }
-
   return (
     <g>
       <rect x={-100} y={-100} width={2200} height={2200} fill="#080D17" />
-      {[240, 640, 1280, 1680].map((lx, i) => (
-        <rect key={i} x={lx - 60} y={24} width={120} height={12} rx={4} fill={accentHex} opacity={0.85} />
-      ))}
+      {[240, 640, 1280, 1680].map((lx, i) => <rect key={i} x={lx - 60} y={24} width={120} height={12} rx={4} fill={accentHex} opacity={0.85} />)}
       <rect x={-50} y={830} width={2100} height={1200} fill="#111827" stroke={INK} strokeWidth={4} />
       <line x1={-50} y1={830} x2={2050} y2={830} stroke={accentHex} strokeWidth={4} />
       {chapterOverlay}
@@ -1529,18 +1297,10 @@ export const SceneBackdrop2D: React.FC<{
 };
 
 export const Camera2D: React.FC<{
-  move: CameraMove2D;
-  progress: number;
-  frame: number;
-  peakTimes?: number[];
-  localTime: number;
-  children?: React.ReactNode;
+  move: CameraMove2D; progress: number; frame: number; peakTimes?: number[]; localTime: number; children?: React.ReactNode;
 }> = ({ move, progress, frame, peakTimes = [], localTime, children }) => {
   const ease = progress * progress * (3 - 2 * progress);
-  let scale = 1;
-  let tx = 0;
-  let ty = 0;
-
+  let scale = 1, tx = 0, ty = 0;
   if (move === "push_in") scale = 1 + ease * 0.06;
   else if (move === "pull_out") scale = 1.07 - ease * 0.07;
   else if (move === "pan_right") { scale = 1.03; tx = 24 - ease * 48; }
@@ -1550,52 +1310,31 @@ export const Camera2D: React.FC<{
   let shake = 0;
   for (const pt of peakTimes) {
     const dt = localTime - pt;
-    if (dt >= 0 && dt < 0.25) {
-      shake += Math.sin(frame * 2.8) * 6 * (1 - dt / 0.25);
-    }
+    if (dt >= 0 && dt < 0.25) shake += Math.sin(frame * 2.8) * 6 * (1 - dt / 0.25);
   }
-
-  return (
-    <g transform={`translate(${960 + tx + shake} ${540 + ty + shake}) scale(${scale}) translate(-960 -540)`}>
-      {children}
-    </g>
-  );
+  return <g transform={`translate(${960 + tx + shake} ${540 + ty + shake}) scale(${scale}) translate(-960 -540)`}>{children}</g>;
 };
 
 export const TelemetryHUD2D: React.FC<{
-  x: number;
-  y: number;
-  w?: number;
-  title: string;
-  metrics: { label: string; value: string; unit?: string; alert?: boolean; barPct?: number }[];
-  progress: number;
+  x: number; y: number; w?: number; title: string;
+  metrics: { label: string; value: string; unit?: string; alert?: boolean; barPct?: number }[]; progress: number;
 }> = ({ x, y, w = 540, title, metrics, progress }) => {
   const p = Math.min(1, progress * 1.6);
-  const rowH = 78;
-  const h = 76 + metrics.length * rowH;
-
+  const h = 76 + metrics.length * 78;
   return (
     <g transform={`translate(${x} ${y}) scale(${0.94 + 0.06 * p})`} opacity={p}>
       <rect x={12} y={14} width={w} height={h} rx={14} fill="#000000" opacity={0.55} />
       <rect x={0} y={0} width={w} height={h} rx={14} fill="#09101F" fillOpacity={0.95} stroke="#38BDF8" strokeWidth={2.5} />
       <rect x={0} y={0} width={w} height={48} rx={14} fill="#111D35" />
       <circle cx={24} cy={24} r={6} fill="#00F0FF" />
-      <text x={44} y={30} fill="#F1F5F9" fontFamily={UI_FONT} fontSize={20} fontWeight={700} letterSpacing={0.8}>
-        {title}
-      </text>
-
+      <text x={44} y={30} fill="#F1F5F9" fontFamily={UI_FONT} fontSize={20} fontWeight={700}>{title}</text>
       {metrics.map((m, idx) => {
-        const my = 76 + idx * rowH;
-        const pct = Math.max(12, Math.min(100, m.barPct ?? (m.alert ? 92 : 68))) * p;
         const col = m.alert ? "#EF4444" : "#00F0FF";
+        const pct = Math.max(12, Math.min(100, m.barPct ?? (m.alert ? 92 : 68))) * p;
         return (
-          <g key={idx} transform={`translate(24 ${my})`}>
-            <text x={0} y={18} fill="#94A3B8" fontFamily={MONO_FONT} fontSize={17} fontWeight={500}>
-              {m.label}
-            </text>
-            <text x={w - 48} y={20} textAnchor="end" fill={col} fontFamily={MONO_FONT} fontSize={26} fontWeight={700}>
-              {m.value} {m.unit || ""}
-            </text>
+          <g key={idx} transform={`translate(24 ${76 + idx * 78})`}>
+            <text x={0} y={18} fill="#94A3B8" fontFamily={MONO_FONT} fontSize={17}>{m.label}</text>
+            <text x={w - 48} y={20} textAnchor="end" fill={col} fontFamily={MONO_FONT} fontSize={26} fontWeight={700}>{m.value} {m.unit || ""}</text>
             <rect x={0} y={34} width={w - 48} height={8} rx={4} fill="#1E293B" />
             <rect x={0} y={34} width={((w - 48) * pct) / 100} height={8} rx={4} fill={col} />
           </g>
@@ -1606,89 +1345,42 @@ export const TelemetryHUD2D: React.FC<{
 };
 
 export const StatCounter2D: React.FC<{
-  x: number;
-  y: number;
-  w?: number;
-  label: string;
-  startVal: number;
-  endVal: number;
-  prefix?: string;
-  suffix?: string;
-  decimals?: number;
-  color?: string;
-  localTime: number;
-  triggerSec?: number;
-}> = ({
-  x,
-  y,
-  w = 540,
-  label,
-  startVal,
-  endVal,
-  prefix = "",
-  suffix = "",
-  decimals = 0,
-  color = "#00F0FF",
-  localTime,
-  triggerSec = 0.1,
-}) => {
+  x: number; y: number; w?: number; label: string; startVal: number; endVal: number;
+  prefix?: string; suffix?: string; decimals?: number; color?: string; localTime: number; triggerSec?: number;
+}> = ({ x, y, w = 540, label, startVal, endVal, prefix = "", suffix = "", decimals = 0, color = "#00F0FF", localTime, triggerSec = 0.1 }) => {
   const { fps } = useVideoConfig();
   const elapsed = Math.max(0, localTime - triggerSec);
-  const ramp = Math.min(1, elapsed / 0.85);
-  const ease = 1 - Math.pow(1 - ramp, 3);
-  const curVal = startVal + (endVal - startVal) * ease;
+  const ease = 1 - Math.pow(1 - Math.min(1, elapsed / 0.85), 3);
   const pop = spring({ frame: Math.max(0, Math.round(elapsed * fps)), fps, config: { damping: 14, stiffness: 200 } });
-  const textVal = formatNumber(curVal, decimals, prefix, suffix);
-
   return (
     <g transform={`translate(${x} ${y}) scale(${0.92 + 0.08 * pop})`}>
-      <rect x={-w / 2 + 10} y={-80 + 12} width={w} height={160} rx={14} fill="#000000" opacity={0.55} />
+      <rect x={-w / 2 + 10} y={-68} width={w} height={160} rx={14} fill="#000000" opacity={0.55} />
       <rect x={-w / 2} y={-80} width={w} height={160} rx={14} fill="#0A1222" fillOpacity={0.96} stroke={color} strokeWidth={3} />
-      <text x={0} y={-32} textAnchor="middle" fill="#94A3B8" fontFamily={MONO_FONT} fontSize={20} fontWeight={700} letterSpacing={1.2}>
-        {label.toUpperCase()}
-      </text>
-      <text x={0} y={42} textAnchor="middle" fill={color} fontFamily={MONO_FONT} fontSize={64} fontWeight={700}>
-        {textVal}
-      </text>
+      <text x={0} y={-32} textAnchor="middle" fill="#94A3B8" fontFamily={MONO_FONT} fontSize={20} fontWeight={700}>{label.toUpperCase()}</text>
+      <text x={0} y={42} textAnchor="middle" fill={color} fontFamily={MONO_FONT} fontSize={64} fontWeight={700}>{formatNumber(startVal + (endVal - startVal) * ease, decimals, prefix, suffix)}</text>
     </g>
   );
 };
 
 export const BlueprintStamp2D: React.FC<{
-  x: number;
-  y: number;
-  text: string;
-  color?: string;
-  rotateDeg?: number;
-  localTime: number;
-  triggerSec?: number;
+  x: number; y: number; text: string; color?: string; rotateDeg?: number; localTime: number; triggerSec?: number;
 }> = ({ x, y, text, color = "#EF4444", rotateDeg = -7, localTime, triggerSec = 0.6 }) => {
   const { fps } = useVideoConfig();
   if (localTime < triggerSec) return null;
-  const f = Math.max(0, Math.round((localTime - triggerSec) * fps));
-  const slam = spring({ frame: f, fps, config: { damping: 11, stiffness: 280, mass: 0.7 } });
-  const scale = 1.65 - 0.65 * slam;
+  const slam = spring({ frame: Math.max(0, Math.round((localTime - triggerSec) * fps)), fps, config: { damping: 11, stiffness: 280, mass: 0.7 } });
   const stampW = Math.max(300, text.length * 26 + 64);
-
   return (
-    <g transform={`translate(${x} ${y}) rotate(${rotateDeg}) scale(${scale})`} opacity={Math.min(1, slam * 1.4)}>
-      <rect x={-stampW / 2 + 8} y={-44 + 8} width={stampW} height={88} rx={10} fill="#000000" opacity={0.65} />
+    <g transform={`translate(${x} ${y}) rotate(${rotateDeg}) scale(${1.65 - 0.65 * slam})`} opacity={Math.min(1, slam * 1.4)}>
+      <rect x={-stampW / 2 + 8} y={-36} width={stampW} height={88} rx={10} fill="#000000" opacity={0.65} />
       <rect x={-stampW / 2} y={-44} width={stampW} height={88} rx={10} fill="#080D18" fillOpacity={0.94} stroke={color} strokeWidth={6} />
       <rect x={-stampW / 2 + 8} y={-36} width={stampW - 16} height={72} rx={6} fill="none" stroke={color} strokeWidth={2} strokeDasharray="8 6" />
-      <text x={0} y={14} textAnchor="middle" fill={color} fontFamily={MONO_FONT} fontSize={36} fontWeight={700} letterSpacing={2}>
-        {text.toUpperCase()}
-      </text>
+      <text x={0} y={14} textAnchor="middle" fill={color} fontFamily={MONO_FONT} fontSize={36} fontWeight={700}>{text.toUpperCase()}</text>
     </g>
   );
 };
 
 export const ServerRack800kW2D: React.FC<{
-  x: number;
-  y: number;
-  scale?: number;
-  accentHex?: string;
-  frame: number;
-  progress: number;
+  x: number; y: number; scale?: number; accentHex?: string; frame: number; progress: number;
 }> = ({ x, y, scale = 1, accentHex = "#00F0FF", frame, progress }) => (
   <g transform={`translate(${x} ${y}) scale(${scale})`}>
     <polygon points="-100,255 115,255 150,235 -65,235" fill="#000000" opacity={0.6} />
@@ -1709,109 +1401,48 @@ export const ServerRack800kW2D: React.FC<{
   </g>
 );
 
-export const DataHall25D: React.FC<{
-  accentHex?: string;
-  frame: number;
-  progress: number;
-  isVertical?: boolean;
-}> = ({ accentHex = "#00F0FF", frame, progress, isVertical = false }) => {
-  const backRow = isVertical ? [220, 420, 620, 820] : [170, 360, 550, 740, 930, 1120];
-  const frontRow = isVertical ? [270, 490, 710] : [230, 430, 630, 830, 1030];
-
-  return (
-    <g>
-      <polygon
-        points={isVertical ? "60,640 1020,640 1050,1240 30,1240" : "70,480 1230,480 1260,860 40,860"}
-        fill="#0B1222"
-        stroke="#1E293B"
-        strokeWidth={3}
-      />
-      <AnimatedFluidPipe2D
-        d={isVertical ? "M 140 520 L 940 520" : "M 120 260 L 1180 260"}
-        color="#334155"
-        fluidColor="#F59E0B"
-        strokeWidth={18}
-        label="48V DC BUSWAY"
-        labelX={isVertical ? 540 : 650}
-        labelY={isVertical ? 485 : 225}
-        frame={frame}
-      />
-      {backRow.map((rx, i) => (
-        <ServerRack800kW2D key={`br_${i}`} x={rx} y={isVertical ? 760 : 480} scale={0.48} accentHex={accentHex} frame={frame + i * 3} progress={progress} />
-      ))}
-      {frontRow.map((rx, i) => (
-        <ServerRack800kW2D key={`fr_${i}`} x={rx} y={isVertical ? 1020 : 690} scale={0.62} accentHex={accentHex} frame={frame + i * 5} progress={progress} />
-      ))}
-      <AnimatedFluidPipe2D
-        d={isVertical ? "M 100 1320 L 980 1320" : "M 80 910 L 1220 910"}
-        fluidColor="#00F0FF"
-        strokeWidth={22}
-        label="CHILLED COOLANT IN -> 18C"
-        labelX={isVertical ? 540 : 420}
-        labelY={isVertical ? 1278 : 872}
-        frame={frame}
-      />
-      <AnimatedFluidPipe2D
-        d={isVertical ? "M 980 1420 L 100 1420" : "M 1220 995 L 80 995"}
-        fluidColor="#EF4444"
-        strokeWidth={22}
-        label="<- HEATED RETURN 45C"
-        labelX={isVertical ? 540 : 880}
-        labelY={isVertical ? 1465 : 1035}
-        frame={frame}
-      />
-    </g>
-  );
-};
-
 export const AnimatedFluidPipe2D: React.FC<{
-  d: string;
-  color?: string;
-  fluidColor?: string;
-  strokeWidth?: number;
-  label?: string;
-  labelX?: number;
-  labelY?: number;
-  frame: number;
+  d: string; color?: string; fluidColor?: string; strokeWidth?: number; label?: string; labelX?: number; labelY?: number; frame: number;
 }> = ({ d, color = "#24324B", fluidColor = "#00F0FF", strokeWidth = 24, label, labelX, labelY, frame }) => {
   const badgeW = label ? Math.max(240, label.length * 12.5 + 36) : 0;
   return (
     <g>
       <path d={d} fill="none" stroke="#04070E" strokeWidth={strokeWidth + 8} strokeLinecap="round" strokeLinejoin="round" />
       <path d={d} fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
-      <path
-        d={d}
-        fill="none"
-        stroke={fluidColor}
-        strokeWidth={strokeWidth * 0.42}
-        strokeDasharray="22 16"
-        strokeDashoffset={-frame * 6.5}
-        strokeLinecap="round"
-      />
+      <path d={d} fill="none" stroke={fluidColor} strokeWidth={strokeWidth * 0.42} strokeDasharray="22 16" strokeDashoffset={-frame * 6.5} strokeLinecap="round" />
       {label && labelX !== undefined && labelY !== undefined && (
         <g transform={`translate(${labelX} ${labelY})`}>
           <rect x={-badgeW / 2} y={-20} width={badgeW} height={38} rx={6} fill="#080E1B" fillOpacity={0.95} stroke={fluidColor} strokeWidth={2} />
-          <text x={0} y={5} textAnchor="middle" fill={fluidColor} fontFamily={MONO_FONT} fontSize={16} fontWeight={700} letterSpacing={0.6}>
-            {label}
-          </text>
+          <text x={0} y={5} textAnchor="middle" fill={fluidColor} fontFamily={MONO_FONT} fontSize={16} fontWeight={700}>{label}</text>
         </g>
       )}
     </g>
   );
 };
 
+export const DataHall25D: React.FC<{
+  accentHex?: string; frame: number; progress: number; isVertical?: boolean;
+}> = ({ accentHex = "#00F0FF", frame, progress, isVertical = false }) => {
+  const backRow = isVertical ? [220, 420, 620, 820] : [170, 360, 550, 740, 930, 1120];
+  const frontRow = isVertical ? [270, 490, 710] : [230, 430, 630, 830, 1030];
+  return (
+    <g>
+      <polygon points={isVertical ? "60,640 1020,640 1050,1240 30,1240" : "70,480 1230,480 1260,860 40,860"} fill="#0B1222" stroke="#1E293B" strokeWidth={3} />
+      <AnimatedFluidPipe2D d={isVertical ? "M 140 520 L 940 520" : "M 120 260 L 1180 260"} color="#334155" fluidColor="#F59E0B" strokeWidth={18} label="48V DC BUSWAY" labelX={isVertical ? 540 : 650} labelY={isVertical ? 485 : 225} frame={frame} />
+      {backRow.map((rx, i) => <ServerRack800kW2D key={`br${i}`} x={rx} y={isVertical ? 760 : 480} scale={0.48} accentHex={accentHex} frame={frame + i * 3} progress={progress} />)}
+      {frontRow.map((rx, i) => <ServerRack800kW2D key={`fr${i}`} x={rx} y={isVertical ? 1020 : 690} scale={0.62} accentHex={accentHex} frame={frame + i * 5} progress={progress} />)}
+      <AnimatedFluidPipe2D d={isVertical ? "M 100 1320 L 980 1320" : "M 80 910 L 1220 910"} fluidColor="#00F0FF" strokeWidth={22} label="CHILLED COOLANT IN -> 18C" labelX={isVertical ? 540 : 420} labelY={isVertical ? 1278 : 872} frame={frame} />
+      <AnimatedFluidPipe2D d={isVertical ? "M 980 1420 L 100 1420" : "M 1220 995 L 80 995"} fluidColor="#EF4444" strokeWidth={22} label="<- HEATED RETURN 45C" labelX={isVertical ? 540 : 880} labelY={isVertical ? 1465 : 1035} frame={frame} />
+    </g>
+  );
+};
+
 export const SpecDocument2D: React.FC<{
-  x: number;
-  y: number;
-  w?: number;
-  title: string;
-  subtitle?: string;
-  items: { label: string; value: string; pct: number; color?: string }[];
-  progress: number;
+  x: number; y: number; w?: number; title: string; subtitle?: string;
+  items: { label: string; value: string; pct: number; color?: string }[]; progress: number;
 }> = ({ x, y, w = 1120, title, subtitle = "ARCHITECTURAL ALLOCATION", items, progress }) => {
   const ease = Math.min(1, progress * 1.45);
   const h = 150 + items.length * 135;
-
   return (
     <g transform={`translate(${x} ${y})`}>
       <rect x={16} y={18} width={w} height={h} rx={16} fill="#000000" opacity={0.6} />
@@ -1820,17 +1451,14 @@ export const SpecDocument2D: React.FC<{
       <circle cx={38} cy={37} r={10} fill="#00F0FF" />
       <text x={68} y={44} fill="#F8FAFC" fontFamily={UI_FONT} fontSize={28} fontWeight={700}>{title}</text>
       <text x={w - 36} y={44} textAnchor="end" fill="#38BDF8" fontFamily={MONO_FONT} fontSize={18} fontWeight={700}>{subtitle}</text>
-
       {items.map((it, idx) => {
-        const iy = 115 + idx * 135;
-        const barCol = it.color || "#00F0FF";
-        const barW = ((w - 96) * Math.min(100, it.pct) * ease) / 100;
+        const col = it.color || "#00F0FF";
         return (
-          <g key={idx} transform={`translate(48 ${iy})`}>
+          <g key={idx} transform={`translate(48 ${115 + idx * 135})`}>
             <text x={0} y={24} fill="#E2E8F0" fontFamily={UI_FONT} fontSize={26} fontWeight={700}>{it.label}</text>
-            <text x={w - 96} y={26} textAnchor="end" fill={barCol} fontFamily={MONO_FONT} fontSize={32} fontWeight={700}>{it.value}</text>
+            <text x={w - 96} y={26} textAnchor="end" fill={col} fontFamily={MONO_FONT} fontSize={32} fontWeight={700}>{it.value}</text>
             <rect x={0} y={46} width={w - 96} height={30} rx={6} fill="#162238" stroke="#1E293B" strokeWidth={2} />
-            <rect x={0} y={46} width={barW} height={30} rx={6} fill={barCol} />
+            <rect x={0} y={46} width={((w - 96) * Math.min(100, it.pct) * ease) / 100} height={30} rx={6} fill={col} />
           </g>
         );
       })}
@@ -1839,13 +1467,7 @@ export const SpecDocument2D: React.FC<{
 };
 
 export const USGridMap2D: React.FC<{
-  x: number;
-  y: number;
-  w?: number;
-  h?: number;
-  accentHex?: string;
-  frame: number;
-  progress: number;
+  x: number; y: number; w?: number; h?: number; accentHex?: string; frame: number; progress: number;
 }> = ({ x, y, w = 1140, h = 680, accentHex = "#F59E0B", frame, progress }) => {
   const nodes = [
     { nx: x + 0.16 * w, ny: y + 0.48 * h, tag: "WEST 500 kV", col: "#00F0FF" },
@@ -1853,49 +1475,26 @@ export const USGridMap2D: React.FC<{
     { nx: x + 0.62 * w, ny: y + 0.34 * h, tag: "MIDWEST SMR", col: "#10B981" },
     { nx: x + 0.82 * w, ny: y + 0.42 * h, tag: "PJM VIRGINIA", col: "#F59E0B" },
   ];
-
   return (
     <g>
       <rect x={x + 12} y={y + 14} width={w} height={h} rx={16} fill="#000000" opacity={0.55} />
       <rect x={x} y={y} width={w} height={h} rx={16} fill="#08101E" stroke="#1E293B" strokeWidth={3} />
-      <polygon
-        points={`${x + 0.08 * w},${y + 0.22 * h} ${x + 0.45 * w},${y + 0.18 * h} ${x + 0.75 * w},${y + 0.22 * h} ${x + 0.92 * w},${y + 0.16 * h} ${x + 0.88 * w},${y + 0.56 * h} ${x + 0.78 * w},${y + 0.84 * h} ${x + 0.65 * w},${y + 0.72 * h} ${x + 0.48 * w},${y + 0.88 * h} ${x + 0.24 * w},${y + 0.68 * h} ${x + 0.08 * w},${y + 0.54 * h}`}
-        fill="#101B30"
-        stroke="#38BDF8"
-        strokeWidth={3}
-      />
-      <path
-        d={`M ${nodes[0].nx} ${nodes[0].ny} L ${nodes[1].nx} ${nodes[1].ny} L ${nodes[3].nx} ${nodes[3].ny} L ${nodes[2].nx} ${nodes[2].ny} Z`}
-        fill="none"
-        stroke={accentHex}
-        strokeWidth={5}
-        strokeDasharray="16 12"
-        strokeDashoffset={-frame * 4}
-      />
-      {nodes.map((n, i) => {
-        const pulse = 18 + Math.sin(frame * 0.2 + i) * 6;
-        return (
-          <g key={i} transform={`translate(${n.nx} ${n.ny})`}>
-            <circle cx={0} cy={0} r={pulse * Math.min(1, progress * 1.5)} fill={n.col} opacity={0.25} />
-            <circle cx={0} cy={0} r={12} fill={n.col} stroke="#060A12" strokeWidth={3} />
-            <rect x={-78} y={-48} width={156} height={28} rx={5} fill="#060B15" stroke={n.col} strokeWidth={2} />
-            <text x={0} y={-29} textAnchor="middle" fill="#F8FAFC" fontFamily={MONO_FONT} fontSize={14} fontWeight={700}>
-              {n.tag}
-            </text>
-          </g>
-        );
-      })}
+      <polygon points={`${x + 0.08 * w},${y + 0.22 * h} ${x + 0.45 * w},${y + 0.18 * h} ${x + 0.75 * w},${y + 0.22 * h} ${x + 0.92 * w},${y + 0.16 * h} ${x + 0.88 * w},${y + 0.56 * h} ${x + 0.78 * w},${y + 0.84 * h} ${x + 0.65 * w},${y + 0.72 * h} ${x + 0.48 * w},${y + 0.88 * h} ${x + 0.24 * w},${y + 0.68 * h} ${x + 0.08 * w},${y + 0.54 * h}`} fill="#101B30" stroke="#38BDF8" strokeWidth={3} />
+      <path d={`M ${nodes[0].nx} ${nodes[0].ny} L ${nodes[1].nx} ${nodes[1].ny} L ${nodes[3].nx} ${nodes[3].ny} L ${nodes[2].nx} ${nodes[2].ny} Z`} fill="none" stroke={accentHex} strokeWidth={5} strokeDasharray="16 12" strokeDashoffset={-frame * 4} />
+      {nodes.map((n, i) => (
+        <g key={i} transform={`translate(${n.nx} ${n.ny})`}>
+          <circle cx={0} cy={0} r={(18 + Math.sin(frame * 0.2 + i) * 6) * Math.min(1, progress * 1.5)} fill={n.col} opacity={0.25} />
+          <circle cx={0} cy={0} r={12} fill={n.col} stroke="#060A12" strokeWidth={3} />
+          <rect x={-78} y={-48} width={156} height={28} rx={5} fill="#060B15" stroke={n.col} strokeWidth={2} />
+          <text x={0} y={-29} textAnchor="middle" fill="#F8FAFC" fontFamily={MONO_FONT} fontSize={14} fontWeight={700}>{n.tag}</text>
+        </g>
+      ))}
     </g>
   );
 };
 
 export const MicrochannelColdPlate2D: React.FC<{
-  x: number;
-  y: number;
-  scale?: number;
-  coolantTempC?: number;
-  frame: number;
-  progress: number;
+  x: number; y: number; scale?: number; coolantTempC?: number; frame: number; progress: number;
 }> = ({ x, y, scale = 1, coolantTempC = 45, frame, progress }) => {
   const lift = Math.min(1, progress * 1.4) * 58;
   const shift = (frame * 3) % 24;
@@ -1903,14 +1502,10 @@ export const MicrochannelColdPlate2D: React.FC<{
     <g transform={`translate(${x} ${y}) scale(${scale})`}>
       <polygon points="180,60 210,42 210,102 180,120" fill="#0F172A" stroke="#00F0FF" strokeWidth={2} />
       <rect x={-180} y={60} width={360} height={60} rx={4} fill="#1E293B" stroke="#00F0FF" strokeWidth={3} />
-      <text x={0} y={98} textAnchor="middle" fill="#00F0FF" fontFamily={MONO_FONT} fontSize={20} fontWeight={700}>
-        SILICON DIE // {coolantTempC}C EXIT
-      </text>
+      <text x={0} y={98} textAnchor="middle" fill="#00F0FF" fontFamily={MONO_FONT} fontSize={20} fontWeight={700}>SILICON DIE // {coolantTempC}C EXIT</text>
       <polygon points="210,0 240,-18 240,30 210,48" fill="#78350F" stroke="#F59E0B" strokeWidth={2} />
       <rect x={-210} y={0} width={420} height={48} rx={4} fill="#B45309" stroke="#F59E0B" strokeWidth={3} />
-      {Array.from({ length: 32 }).map((_, i) => (
-        <rect key={i} x={-190 + i * 12} y={-40} width={6} height={40} fill={i % 2 === 0 ? "#D97706" : "#38BDF8"} opacity={0.75 + 0.25 * Math.sin(shift + i)} />
-      ))}
+      {Array.from({ length: 32 }).map((_, i) => <rect key={i} x={-190 + i * 12} y={-40} width={6} height={40} fill={i % 2 === 0 ? "#D97706" : "#38BDF8"} opacity={0.75 + 0.25 * Math.sin(shift + i)} />)}
       <g transform={`translate(0 ${-lift})`}>
         <polygon points="-220,-90 -190,-108 250,-108 220,-90" fill="#475569" stroke="#94A3B8" strokeWidth={2} />
         <polygon points="220,-90 250,-108 250,-62 220,-44" fill="#1E293B" stroke="#94A3B8" strokeWidth={2} />
@@ -1925,20 +1520,14 @@ export const MicrochannelColdPlate2D: React.FC<{
 };
 
 export const TransformerSubstation2D: React.FC<{
-  x: number;
-  y: number;
-  scale?: number;
-  voltageKV?: number;
-  frame: number;
+  x: number; y: number; scale?: number; voltageKV?: number; frame: number;
 }> = ({ x, y, scale = 1, voltageKV = 345, frame }) => (
   <g transform={`translate(${x} ${y}) scale(${scale})`}>
     <polygon points="-150,165 165,165 205,140 -110,140" fill="#000000" opacity={0.55} />
     <polygon points="160,-100 198,-124 198,136 160,160" fill="#0D1424" stroke="#475569" strokeWidth={4} />
     <polygon points="-160,-100 -122,-124 198,-124 160,-100" fill="#334155" stroke="#64748B" strokeWidth={3} />
     <rect x={-160} y={-100} width={320} height={260} rx={8} fill="#1E293B" stroke="#475569" strokeWidth={5} />
-    {[-140, -100, -60, 60, 100, 140].map((fx, i) => (
-      <line key={i} x1={fx} y1={-80} x2={fx} y2={140} stroke="#334155" strokeWidth={8} />
-    ))}
+    {[-140, -100, -60, 60, 100, 140].map((fx, i) => <line key={i} x1={fx} y1={-80} x2={fx} y2={140} stroke="#334155" strokeWidth={8} />)}
     {[-80, 0, 80].map((bx, i) => (
       <g key={i} transform={`translate(${bx} -100)`}>
         <polygon points="-16,0 16,0 8,-90 -8,-90" fill="#94A3B8" stroke="#334155" strokeWidth={3} />
@@ -1947,57 +1536,33 @@ export const TransformerSubstation2D: React.FC<{
       </g>
     ))}
     <rect x={-95} y={36} width={190} height={44} rx={6} fill="#080E1B" stroke="#F59E0B" strokeWidth={2.5} />
-    <text x={0} y={65} textAnchor="middle" fill="#F59E0B" fontFamily={MONO_FONT} fontSize={18} fontWeight={700}>
-      {voltageKV} kV STEP-DOWN
-    </text>
+    <text x={0} y={65} textAnchor="middle" fill="#F59E0B" fontFamily={MONO_FONT} fontSize={18} fontWeight={700}>{voltageKV} kV STEP-DOWN</text>
   </g>
 );
 
 export const NuclearSMRVessel2D: React.FC<{
-  x: number;
-  y: number;
-  scale?: number;
-  cherenkovGlow?: boolean;
-  frame: number;
-  progress: number;
-}> = ({ x, y, scale = 1, cherenkovGlow = true, frame, progress }) => {
-  const pulse = 0.75 + 0.25 * Math.sin(frame * 0.2);
-  const rodDrop = Math.sin(frame * 0.1) * 18 * Math.min(1, progress * 1.5);
-  return (
-    <g transform={`translate(${x} ${y}) scale(${scale})`}>
-      <ellipse cx={16} cy={186} rx={138} ry={22} fill="#000000" opacity={0.55} />
-      <path d="M 120 -80 L 148 -98 L 148 162 L 120 180 Z" fill="#0B1120" stroke="#475569" strokeWidth={4} />
-      <path d="M -120 -80 Q -120 -220 0 -220 Q 120 -220 120 -80 L 120 180 L -120 180 Z" fill="#1E293B" stroke="#475569" strokeWidth={6} />
-      <rect x={-75} y={-30} width={150} height={160} rx={12} fill="#0284C7" stroke="#38BDF8" strokeWidth={4} />
-      {cherenkovGlow && <rect x={-65} y={-20} width={130} height={140} rx={8} fill="#00F0FF" opacity={pulse * 0.85} />}
-      {[-32, 0, 32].map((rx, i) => (
-        <rect key={i} x={rx - 8} y={-110 + rodDrop} width={16} height={110} rx={4} fill="#FACC15" stroke="#713F12" strokeWidth={2} />
-      ))}
-    </g>
-  );
-};
+  x: number; y: number; scale?: number; cherenkovGlow?: boolean; frame: number; progress: number;
+}> = ({ x, y, scale = 1, cherenkovGlow = true, frame, progress }) => (
+  <g transform={`translate(${x} ${y}) scale(${scale})`}>
+    <ellipse cx={16} cy={186} rx={138} ry={22} fill="#000000" opacity={0.55} />
+    <path d="M 120 -80 L 148 -98 L 148 162 L 120 180 Z" fill="#0B1120" stroke="#475569" strokeWidth={4} />
+    <path d="M -120 -80 Q -120 -220 0 -220 Q 120 -220 120 -80 L 120 180 L -120 180 Z" fill="#1E293B" stroke="#475569" strokeWidth={6} />
+    <rect x={-75} y={-30} width={150} height={160} rx={12} fill="#0284C7" stroke="#38BDF8" strokeWidth={4} />
+    {cherenkovGlow && <rect x={-65} y={-20} width={130} height={140} rx={8} fill="#00F0FF" opacity={(0.75 + 0.25 * Math.sin(frame * 0.2)) * 0.85} />}
+    {[-32, 0, 32].map((rx, i) => <rect key={i} x={rx - 8} y={-110 + Math.sin(frame * 0.1) * 18 * Math.min(1, progress * 1.5)} width={16} height={110} rx={4} fill="#FACC15" stroke="#713F12" strokeWidth={2} />)}
+  </g>
+);
 
 export const TechnicalCallout2D: React.FC<{
-  x: number;
-  y: number;
-  text: string;
-  subtext?: string;
-  color?: string;
-  localTime: number;
-  delaySec?: number;
-  arrowTo?: [number, number];
+  x: number; y: number; text: string; subtext?: string; color?: string; localTime: number; delaySec?: number; arrowTo?: [number, number];
 }> = ({ x, y, text, subtext, color = "#00F0FF", localTime, delaySec = 0, arrowTo }) => {
   const { fps } = useVideoConfig();
-  const f = Math.max(0, Math.round((localTime - delaySec) * fps));
-  const pop = spring({ frame: f, fps, config: { damping: 14, stiffness: 180 } });
   if (localTime < delaySec) return null;
+  const pop = spring({ frame: Math.max(0, Math.round((localTime - delaySec) * fps)), fps, config: { damping: 14, stiffness: 180 } });
   const w = Math.max(220, text.length * 14 + 32);
-
   return (
     <g transform={`translate(${x} ${y}) scale(${pop})`}>
-      {arrowTo && (
-        <line x1={0} y1={0} x2={arrowTo[0] - x} y2={arrowTo[1] - y} stroke={color} strokeWidth={2.5} strokeDasharray="5 5" />
-      )}
+      {arrowTo && <line x1={0} y1={0} x2={arrowTo[0] - x} y2={arrowTo[1] - y} stroke={color} strokeWidth={2.5} strokeDasharray="5 5" />}
       <rect x={-16} y={-26} width={w} height={subtext ? 64 : 42} rx={6} fill="#080E1B" stroke={color} strokeWidth={2.5} />
       <text x={0} y={0} fill={color} fontFamily={MONO_FONT} fontSize={19} fontWeight={700}>{text}</text>
       {subtext && <text x={0} y={24} fill="#94A3B8" fontFamily={UI_FONT} fontSize={14}>{subtext}</text>}
@@ -2005,61 +1570,36 @@ export const TechnicalCallout2D: React.FC<{
   );
 };
 
-export const TitleCard2D: React.FC<{
-  text: string;
-  progress: number;
-  accentHex?: string;
-}> = ({ text, progress, accentHex = "#00F0FF" }) => {
-  const s = 0.94 + Math.min(1, progress * 2.2) * 0.06;
-  return (
-    <g transform={`translate(960 540) scale(${s})`}>
-      <text x={0} y={10} textAnchor="middle" fill="#FFFFFF" fontFamily={UI_FONT} fontSize={84} fontWeight={700}>{text}</text>
-      <line x1={-340 * Math.min(1, progress * 1.6)} y1={64} x2={340 * Math.min(1, progress * 1.6)} y2={64} stroke={accentHex} strokeWidth={7} strokeLinecap="round" />
-    </g>
-  );
-};
+export const TitleCard2D: React.FC<{ text: string; progress: number; accentHex?: string }> = ({ text, progress, accentHex = "#00F0FF" }) => (
+  <g transform={`translate(960 540) scale(${0.94 + Math.min(1, progress * 2.2) * 0.06})`}>
+    <text x={0} y={10} textAnchor="middle" fill="#FFFFFF" fontFamily={UI_FONT} fontSize={84} fontWeight={700}>{text}</text>
+    <line x1={-340 * Math.min(1, progress * 1.6)} y1={64} x2={340 * Math.min(1, progress * 1.6)} y2={64} stroke={accentHex} strokeWidth={7} strokeLinecap="round" />
+  </g>
+);
 
 export const LineChart2D: React.FC<{
-  x: number;
-  y: number;
-  w?: number;
-  h?: number;
-  label?: string;
-  startVal?: number;
-  endVal?: number;
-  prefix?: string;
-  suffix?: string;
-  decimals?: number;
-  color?: string;
-  progress: number;
+  x: number; y: number; w?: number; h?: number; label?: string; startVal?: number; endVal?: number;
+  prefix?: string; suffix?: string; decimals?: number; color?: string; progress: number;
 }> = ({ x, y, w = 960, h = 440, label = "SURGE", startVal = 0, endVal = 100, prefix = "", suffix = "", decimals = 0, color = "#EF4444", progress }) => {
   const drawProg = Math.min(1, progress * 1.4);
-  const cur = startVal + (endVal - startVal) * drawProg;
   const d = `M ${x + 40} ${y + h - 30} Q ${x + w * 0.45} ${y + h * 0.72} ${x + w - 40} ${y + 90}`;
   return (
     <g>
       <rect x={x - 12} y={y - 12} width={w + 24} height={h + 44} rx={12} fill="#080E1B" fillOpacity={0.95} stroke="#1E293B" strokeWidth={3} />
       <path d={d} fill="none" stroke={color} strokeWidth={9} strokeLinecap="round" strokeDasharray={w * 1.5} strokeDashoffset={w * 1.5 * (1 - drawProg)} />
       <text x={x + 28} y={y + 42} fill="#E2E8F0" fontFamily={UI_FONT} fontSize={26} fontWeight={700}>{label}</text>
-      <text x={x + w - 28} y={y + 54} textAnchor="end" fill={color} fontFamily={MONO_FONT} fontSize={48} fontWeight={700}>
-        {formatNumber(cur, decimals, prefix, suffix)}
-      </text>
+      <text x={x + w - 28} y={y + 54} textAnchor="end" fill={color} fontFamily={MONO_FONT} fontSize={48} fontWeight={700}>{formatNumber(startVal + (endVal - startVal) * drawProg, decimals, prefix, suffix)}</text>
     </g>
   );
 };
 
 export const BarChart2D: React.FC<{
-  x: number;
-  y: number;
-  w?: number;
-  h?: number;
-  bars: { label: string; value: number; prefix?: string; suffix?: string; decimals?: number; color?: string }[];
-  progress: number;
+  x: number; y: number; w?: number; h?: number;
+  bars: { label: string; value: number; prefix?: string; suffix?: string; decimals?: number; color?: string }[]; progress: number;
 }> = ({ x, y, w = 960, h = 460, bars, progress }) => {
   const max = Math.max(1, ...bars.map((b) => b.value));
   const bw = Math.min(180, (w / Math.max(1, bars.length)) * 0.54);
   const grow = Math.min(1, progress * 1.55);
-
   return (
     <g>
       <rect x={x - 20} y={y - 20} width={w + 40} height={h + 110} rx={12} fill="#080E1B" fillOpacity={0.92} stroke="#1E293B" strokeWidth={2.5} />
@@ -2069,17 +1609,12 @@ export const BarChart2D: React.FC<{
         const gap = w / Math.max(1, bars.length);
         const bx = x + i * gap + (gap - bw) / 2;
         const col = b.color || "#00F0FF";
-        const valText = formatNumber(b.value * grow, b.decimals ?? 0, b.prefix ?? "", b.suffix ?? "");
         return (
           <g key={i}>
             <polygon points={`${bx + bw},${y + h - bh} ${bx + bw + 18},${y + h - bh - 12} ${bx + bw + 18},${y + h - 12} ${bx + bw},${y + h}`} fill="#060A12" stroke={col} strokeWidth={2} />
             <rect x={bx} y={y + h - bh} width={bw} height={bh} rx={4} fill={col} />
-            <text x={bx + bw / 2} y={y + h - bh - 18} textAnchor="middle" fill={col} fontFamily={MONO_FONT} fontSize={30} fontWeight={700}>
-              {valText}
-            </text>
-            <text x={bx + bw / 2} y={y + h + 44} textAnchor="middle" fill="#E2E8F0" fontFamily={UI_FONT} fontSize={22} fontWeight={700}>
-              {b.label}
-            </text>
+            <text x={bx + bw / 2} y={y + h - bh - 18} textAnchor="middle" fill={col} fontFamily={MONO_FONT} fontSize={30} fontWeight={700}>{formatNumber(b.value * grow, b.decimals ?? 0, b.prefix ?? "", b.suffix ?? "")}</text>
+            <text x={bx + bw / 2} y={y + h + 44} textAnchor="middle" fill="#E2E8F0" fontFamily={UI_FONT} fontSize={22} fontWeight={700}>{b.label}</text>
           </g>
         );
       })}
@@ -2088,14 +1623,7 @@ export const BarChart2D: React.FC<{
 };
 
 export const BalanceScale2D: React.FC<{
-  x: number;
-  y: number;
-  leftLabel: string;
-  rightLabel: string;
-  tiltDeg?: number;
-  leftColor?: string;
-  rightColor?: string;
-  progress: number;
+  x: number; y: number; leftLabel: string; rightLabel: string; tiltDeg?: number; leftColor?: string; rightColor?: string; progress: number;
 }> = ({ x, y, leftLabel, rightLabel, tiltDeg = 15, leftColor = "#10B981", rightColor = "#EF4444", progress }) => {
   const tilt = tiltDeg * Math.min(1, progress * 1.5);
   return (
@@ -2111,14 +1639,7 @@ export const BalanceScale2D: React.FC<{
 };
 
 export const Microchip2D: React.FC<{
-  x: number;
-  y: number;
-  scale?: number;
-  color?: string;
-  cracked?: boolean;
-  overheating?: boolean;
-  frame: number;
-  progress: number;
+  x: number; y: number; scale?: number; color?: string; cracked?: boolean; overheating?: boolean; frame: number; progress: number;
 }> = ({ x, y, scale = 1, color = "#00F0FF", overheating = false, frame }) => (
   <g transform={`translate(${x} ${y}) scale(${scale})`}>
     <polygon points="120,-120 146,-138 146,102 120,120" fill="#060A12" stroke={overheating ? "#EF4444" : color} strokeWidth={3} />
@@ -2129,13 +1650,7 @@ export const Microchip2D: React.FC<{
   </g>
 );
 
-export const PowerPylon2D: React.FC<{
-  x: number;
-  y: number;
-  scale?: number;
-  accentHex?: string;
-  frame: number;
-}> = ({ x, y, scale = 1, accentHex = "#F59E0B", frame }) => (
+export const PowerPylon2D: React.FC<{ x: number; y: number; scale?: number; accentHex?: string; frame: number }> = ({ x, y, scale = 1, accentHex = "#F59E0B", frame }) => (
   <g transform={`translate(${x} ${y}) scale(${scale})`}>
     <polygon points="-80,180 -20,-180 20,-180 80,180" fill="none" stroke="#94A3B8" strokeWidth={6} />
     <line x1={-120} y1={-80} x2={120} y2={-80} stroke="#94A3B8" strokeWidth={8} />
@@ -2144,14 +1659,7 @@ export const PowerPylon2D: React.FC<{
   </g>
 );
 
-export const BatteryBank2D: React.FC<{
-  x: number;
-  y: number;
-  scale?: number;
-  accentHex?: string;
-  frame: number;
-  progress: number;
-}> = ({ x, y, scale = 1, accentHex = "#10B981", frame, progress }) => (
+export const BatteryBank2D: React.FC<{ x: number; y: number; scale?: number; accentHex?: string; frame: number; progress: number }> = ({ x, y, scale = 1, accentHex = "#10B981", frame, progress }) => (
   <g transform={`translate(${x} ${y}) scale(${scale})`}>
     <polygon points="140,-90 168,-108 168,72 140,90" fill="#0B1120" stroke="#475569" strokeWidth={3} />
     <polygon points="-140,-90 -112,-108 168,-108 140,-90" fill="#334155" stroke="#64748B" strokeWidth={3} />
@@ -2160,12 +1668,7 @@ export const BatteryBank2D: React.FC<{
   </g>
 );
 
-export const SplitScreen3Panel: React.FC<{
-  progress: number;
-  panel1: React.ReactNode;
-  panel2: React.ReactNode;
-  panel3: React.ReactNode;
-}> = ({ progress, panel1, panel2, panel3 }) => (
+export const SplitScreen3Panel: React.FC<{ progress: number; panel1: React.ReactNode; panel2: React.ReactNode; panel3: React.ReactNode }> = ({ progress, panel1, panel2, panel3 }) => (
   <g>
     <g>{panel1}</g>
     {progress >= 0.25 && <g>{panel2}</g>}
@@ -2183,27 +1686,16 @@ import { SCENE_REGISTRY } from "../generated/SceneRegistry";
 import { BlueprintStamp2D, StatCounter2D } from "./CartoonKit2D";
 import type { CartoonPlan, Transition2D } from "../types";
 
-function computeTransitionTransform(
-  transition: Transition2D,
-  enterProg: number,
-  width: number,
-  height: number
-): { transform?: string; opacity: number } {
+function computeTransitionTransform(transition: Transition2D, enterProg: number, width: number, height: number): { transform?: string; opacity: number } {
   const p = Math.max(0, Math.min(1, enterProg));
   const ease = p * p * (3 - 2 * p);
-
   switch (transition) {
-    case "slide_left":
-      return { transform: `translateX(${(1 - ease) * width}px)`, opacity: 1 };
-    case "slide_up":
-      return { transform: `translateY(${(1 - ease) * height}px)`, opacity: 1 };
-    case "wipe_right":
-      return { transform: `translateX(${-(1 - ease) * width}px)`, opacity: 1 };
-    case "zoom_dissolve":
-      return { transform: `scale(${0.92 + 0.08 * ease})`, opacity: ease };
+    case "slide_left": return { transform: `translateX(${(1 - ease) * width}px)`, opacity: 1 };
+    case "slide_up": return { transform: `translateY(${(1 - ease) * height}px)`, opacity: 1 };
+    case "wipe_right": return { transform: `translateX(${-(1 - ease) * width}px)`, opacity: 1 };
+    case "zoom_dissolve": return { transform: `scale(${0.92 + 0.08 * ease})`, opacity: ease };
     case "flash_cut":
-    default:
-      return { opacity: Math.min(1, p * 2.5) };
+    default: return { opacity: Math.min(1, p * 2.5) };
   }
 }
 
@@ -2227,17 +1719,10 @@ export const CartoonStage2D: React.FC<{ plan: CartoonPlan }> = ({ plan }) => {
 
   const ActiveComp = SCENE_REGISTRY[activeScene.id];
   const PrevComp = prevScene ? SCENE_REGISTRY[prevScene.id] : null;
-
   const activeDur = Math.max(0.1, activeScene.endSec - activeScene.startSec);
   const activeProgress = Math.max(0, Math.min(1, timeIntoScene / activeDur));
-  const activeStyle = inTransition
-    ? computeTransitionTransform(activeScene.transition, enterProg, width, height)
-    : { opacity: 1 };
-
-  const flashOpacity =
-    inTransition && activeScene.transition === "flash_cut"
-      ? interpolate(enterProg, [0, 0.35, 1], [0.85, 0.4, 0], { extrapolateRight: "clamp" })
-      : 0;
+  const activeStyle = inTransition ? computeTransitionTransform(activeScene.transition, enterProg, width, height) : { opacity: 1 };
+  const flashOpacity = inTransition && activeScene.transition === "flash_cut" ? interpolate(enterProg, [0, 0.35, 1], [0.85, 0.4, 0], { extrapolateRight: "clamp" }) : 0;
 
   const vb = isVertical ? "0 0 1080 1920" : "0 0 1920 1080";
   const showHudOverlays = activeScene.backdropTheme !== "black_title_card";
@@ -2247,76 +1732,27 @@ export const CartoonStage2D: React.FC<{ plan: CartoonPlan }> = ({ plan }) => {
     <AbsoluteFill style={{ backgroundColor: "#04070E", overflow: "hidden" }}>
       {inTransition && prevScene && PrevComp && (
         <AbsoluteFill>
-          <PrevComp
-            frame={frame}
-            localFrame={Math.max(0, frame - Math.round(prevScene.startSec * fps))}
-            localTime={tSec - prevScene.startSec}
-            durationSec={Math.max(0.1, prevScene.endSec - prevScene.startSec)}
-            progress={1}
-            peakTimes={prevScene.localPeakTimes}
-            accentHex={prevScene.accentHex}
-            backdropTheme={prevScene.backdropTheme}
-            cameraMove={prevScene.cameraMove}
-            chapterTag={prevScene.chapterTag || "01 // CORE TO GRID"}
-            isVertical={isVertical}
-          />
+          <PrevComp frame={frame} localFrame={Math.max(0, frame - Math.round(prevScene.startSec * fps))} localTime={tSec - prevScene.startSec} durationSec={Math.max(0.1, prevScene.endSec - prevScene.startSec)} progress={1} peakTimes={prevScene.localPeakTimes} accentHex={prevScene.accentHex} backdropTheme={prevScene.backdropTheme} cameraMove={prevScene.cameraMove} chapterTag={prevScene.chapterTag || "01 // CORE TO GRID"} isVertical={isVertical} />
         </AbsoluteFill>
       )}
-
       {ActiveComp && (
         <AbsoluteFill style={activeStyle}>
-          <ActiveComp
-            frame={frame}
-            localFrame={Math.max(0, frame - Math.round(activeScene.startSec * fps))}
-            localTime={timeIntoScene}
-            durationSec={activeDur}
-            progress={activeProgress}
-            peakTimes={activeScene.localPeakTimes}
-            accentHex={activeScene.accentHex}
-            backdropTheme={activeScene.backdropTheme}
-            cameraMove={activeScene.cameraMove}
-            chapterTag={activeScene.chapterTag || "01 // CORE TO GRID"}
-            isVertical={isVertical}
-          />
+          <ActiveComp frame={frame} localFrame={Math.max(0, frame - Math.round(activeScene.startSec * fps))} localTime={timeIntoScene} durationSec={activeDur} progress={activeProgress} peakTimes={activeScene.localPeakTimes} accentHex={activeScene.accentHex} backdropTheme={activeScene.backdropTheme} cameraMove={activeScene.cameraMove} chapterTag={activeScene.chapterTag || "01 // CORE TO GRID"} isVertical={isVertical} />
         </AbsoluteFill>
       )}
-
       {showHudOverlays && (activeScene.statCounter || activeScene.stampText) && (
         <AbsoluteFill style={{ pointerEvents: "none" }}>
           <svg viewBox={vb} style={{ width: "100%", height: "100%", display: "block" }}>
             {activeScene.statCounter && (
-              <StatCounter2D
-                x={isVertical ? 540 : 1580}
-                y={isVertical ? 1720 : 815}
-                w={isVertical ? 820 : 540}
-                label={activeScene.statCounter.label}
-                startVal={activeScene.statCounter.startVal}
-                endVal={activeScene.statCounter.endVal}
-                prefix={activeScene.statCounter.prefix}
-                suffix={activeScene.statCounter.suffix}
-                decimals={activeScene.statCounter.decimals ?? 0}
-                color={activeScene.statCounter.color || activeScene.accentHex}
-                localTime={timeIntoScene}
-                triggerSec={activeScene.statCounter.triggerSec ?? 0.15}
-              />
+              <StatCounter2D x={isVertical ? 540 : 1580} y={isVertical ? 1720 : 815} w={isVertical ? 820 : 540} label={activeScene.statCounter.label} startVal={activeScene.statCounter.startVal} endVal={activeScene.statCounter.endVal} prefix={activeScene.statCounter.prefix} suffix={activeScene.statCounter.suffix} decimals={activeScene.statCounter.decimals ?? 0} color={activeScene.statCounter.color || activeScene.accentHex} localTime={timeIntoScene} triggerSec={activeScene.statCounter.triggerSec ?? 0.15} />
             )}
             {activeScene.stampText && (
-              <BlueprintStamp2D
-                x={isVertical ? 540 : 980}
-                y={isVertical ? 410 : 175}
-                text={activeScene.stampText}
-                color={activeScene.stampColor || "#EF4444"}
-                localTime={timeIntoScene}
-                triggerSec={stampTrigger}
-              />
+              <BlueprintStamp2D x={isVertical ? 540 : 980} y={isVertical ? 410 : 175} text={activeScene.stampText} color={activeScene.stampColor || "#EF4444"} localTime={timeIntoScene} triggerSec={stampTrigger} />
             )}
           </svg>
         </AbsoluteFill>
       )}
-
-      {flashOpacity > 0 && (
-        <AbsoluteFill style={{ backgroundColor: "#FFFFFF", opacity: flashOpacity, pointerEvents: "none" }} />
-      )}
+      {flashOpacity > 0 && <AbsoluteFill style={{ backgroundColor: "#FFFFFF", opacity: flashOpacity, pointerEvents: "none" }} />}
     </AbsoluteFill>
   );
 };
@@ -2324,9 +1760,7 @@ export const CartoonStage2D: React.FC<{ plan: CartoonPlan }> = ({ plan }) => {
 
 FILES["src/generated/scenes/Scene_01.tsx"] = r'''
 import React from "react";
-import {
-  SceneBackdrop2D, Camera2D, DataHall25D, TelemetryHUD2D
-} from "../../components/CartoonKit2D";
+import { SceneBackdrop2D, Camera2D, DataHall25D, TelemetryHUD2D } from "../../components/CartoonKit2D";
 import type { Scene2DProps } from "../../types";
 
 export const Scene_01: React.FC<Scene2DProps> = (props) => {
@@ -2383,20 +1817,12 @@ export const SCENE_PLAN: CartoonPlan = {
       componentName: "Scene_01",
       chapterTag: "01 // 1-GIGAWATT DATA HALL",
       visualConcept: "2.5D Isometric Data Hall + Right Telemetry HUD",
-      visualSpec: "2.5D server racks on left 65%, glowing telemetry HUD on right 30%, labeled cooling loops bottom",
+      visualSpec: "2.5D racks on left 65%, telemetry HUD right 30%, labeled cooling loops bottom",
       titleText: "",
       stampText: "600 KW HEAT",
       stampColor: "#EF4444",
       stampTriggerSec: 1.2,
-      statCounter: {
-        label: "FACILITY EFFICIENCY",
-        startVal: 1.48,
-        endVal: 1.12,
-        suffix: " PUE",
-        decimals: 2,
-        color: "#00F0FF",
-        triggerSec: 0.2,
-      },
+      statCounter: { label: "FACILITY EFFICIENCY", startVal: 1.48, endVal: 1.12, suffix: " PUE", decimals: 2, color: "#00F0FF", triggerSec: 0.2 },
       backdropTheme: "isometric_blueprint",
       cameraMove: "push_in",
       transition: "flash_cut",
@@ -2417,12 +1843,7 @@ import { CartoonStage2D } from "../components/CartoonStage2D";
 import { SCENE_PLAN } from "./ScenesData";
 
 export const GENERATED_TOTAL_FRAMES = 150;
-
-export const GeneratedTimeline: React.FC = () => (
-  <AbsoluteFill>
-    <CartoonStage2D plan={SCENE_PLAN} />
-  </AbsoluteFill>
-);
+export const GeneratedTimeline: React.FC = () => (<AbsoluteFill><CartoonStage2D plan={SCENE_PLAN} /></AbsoluteFill>);
 '''
 
 FILES["src/Main.tsx"] = r'''
@@ -2445,21 +1866,8 @@ import { GENERATED_TOTAL_FRAMES } from "./generated/GeneratedTimeline";
 import { SCENE_PLAN } from "./generated/ScenesData";
 
 export const RemotionRoot: React.FC = () => {
-  const totalFrames = Math.max(
-    60,
-    GENERATED_TOTAL_FRAMES || Math.round(SCENE_PLAN.totalDurationSec * SCENE_PLAN.fps)
-  );
-
-  return (
-    <Composition
-      id="Main"
-      component={Main}
-      durationInFrames={totalFrames}
-      fps={SCENE_PLAN.fps || 30}
-      width={SCENE_PLAN.width || 1920}
-      height={SCENE_PLAN.height || 1080}
-    />
-  );
+  const totalFrames = Math.max(60, GENERATED_TOTAL_FRAMES || Math.round(SCENE_PLAN.totalDurationSec * SCENE_PLAN.fps));
+  return <Composition id="Main" component={Main} durationInFrames={totalFrames} fps={SCENE_PLAN.fps || 30} width={SCENE_PLAN.width || 1920} height={SCENE_PLAN.height || 1080} />;
 };
 '''
 
@@ -2484,35 +1892,25 @@ on:
         required: false
         default: "0"
         type: choice
-        options:
-          - "0"
-          - "30"
+        options: ["0", "30"]
       force_workers:
-        description: "Parallel cloud runners (auto = up to 20 workers)"
+        description: "Parallel workers (auto = up to 20)"
         required: false
         default: "auto"
         type: choice
-        options:
-          - "auto"
-          - "4"
-          - "10"
-          - "20"
+        options: ["auto", "4", "10", "20"]
       trim_silence:
         description: "Trim pauses >0.65s?"
         required: false
         default: "false"
         type: choice
-        options:
-          - "false"
-          - "true"
+        options: ["false", "true"]
       include_bgm:
-        description: "Include calm auto-ducked background music?"
+        description: "Include calm background music?"
         required: false
         default: "true"
         type: choice
-        options:
-          - "true"
-          - "false"
+        options: ["true", "false"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -2527,67 +1925,40 @@ jobs:
       chunks_json: ${{ steps.chunk_plan.outputs.chunks_json }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Auto-Unpack Latest setup_factory.py
-        run: |
-          if [ -f setup_factory.py ]; then
-            python setup_factory.py --no-git
-          fi
-
-      - name: Check for input audio
-        id: check_input
+      - run: |
+          if [ -f setup_factory.py ]; then python setup_factory.py --no-git; fi
+      - id: check_input
         run: |
           shopt -s nullglob nocaseglob
           files=(input/*.mp3 input/*.wav input/*.m4a input/*.aac input/*.flac input/*.mp4)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "has_input=false" >> $GITHUB_OUTPUT
-          else
-            echo "has_input=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Set up Python 3.11
-        if: steps.check_input.outputs.has_input == 'true'
+          echo "has_input=$([ ${#files[@]} -gt 0 ] && echo true || echo false)" >> $GITHUB_OUTPUT
+      - if: steps.check_input.outputs.has_input == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
-
-      - name: Set up Node.js 22
-        if: steps.check_input.outputs.has_input == 'true'
+      - if: steps.check_input.outputs.has_input == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-
-      - name: Install FFmpeg & Headless Chrome OS Libraries
-        if: steps.check_input.outputs.has_input == 'true'
+      - if: steps.check_input.outputs.has_input == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            ffmpeg libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 \
-            libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
-            libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 \
-            libasound2t64 || sudo apt-get install -y libasound2
-
-      - name: Install Python & Node Packages
-        if: steps.check_input.outputs.has_input == 'true'
-        run: |
+          sudo apt-get install -y ffmpeg libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 libasound2t64 || sudo apt-get install -y libasound2
           pip install -r requirements.txt
           npm install --no-audit --no-fund
           npx remotion browser ensure
-
-      - name: Step 1 - Transcribe & Vocal Emphasis Peaks
+      - name: Step 1 - Transcribe & Emphasis Peaks
         if: steps.check_input.outputs.has_input == 'true'
         env:
           INPUT_FOLDER: "input"
           TRIM_SILENCE: ${{ github.event.inputs.trim_silence || 'false' }}
           PREVIEW_SECONDS: ${{ github.event.inputs.preview_seconds || '0' }}
         run: python scripts/analyze_audio.py
-
-      - name: Step 2 - Multi-Provider AI Blueprint Illustrator & Self-Healer
+      - name: Step 2 - Multi-Provider AI Blueprint Illustrator
         if: steps.check_input.outputs.has_input == 'true'
         env:
           INPUT_FOLDER: "input"
@@ -2596,32 +1967,26 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           VIDEO_FORMAT: "long_16_9"
         run: python scripts/generate_scenes.py
-
-      - name: Step 3 - Audit Blueprint Continuity
+      - name: Step 3 - Validate Scenes
         if: steps.check_input.outputs.has_input == 'true'
         run: python scripts/validate_scenes.py
-
-      - name: Step 4 - Master Audio, BGM & 5 Crisp SFX Mix
+      - name: Step 4 - Master Audio, BGM & 5 SFX
         if: steps.check_input.outputs.has_input == 'true'
         env:
           INCLUDE_BGM: ${{ github.event.inputs.include_bgm || 'true' }}
         run: python scripts/mix_audio.py
-
-      - name: Step 5 - Frame 0 Smoke Test & Bundle
+      - name: Step 5 - Smoke Test & Bundle
         if: steps.check_input.outputs.has_input == 'true'
         run: |
           npx remotion still src/index.ts Main work/frame0_smoke.png --frame=0
           npx remotion bundle src/index.ts --public-dir public --out-dir build_bundle
-
-      - name: Step 6 - Plan Up to 20 Parallel Workers
+      - name: Step 6 - Plan Workers
         id: chunk_plan
         if: steps.check_input.outputs.has_input == 'true'
         env:
           FORCE_WORKERS: ${{ github.event.inputs.force_workers || 'auto' }}
         run: python scripts/plan_chunks.py
-
-      - name: Upload Prepared Bundle
-        if: steps.check_input.outputs.has_input == 'true'
+      - if: steps.check_input.outputs.has_input == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: prepared-long
@@ -2641,52 +2006,24 @@ jobs:
       fail-fast: false
       matrix:
         chunk: ${{ fromJson(needs.plan_and_prepare.outputs.chunks_json) }}
-
     steps:
-      - name: Checkout Config
-        uses: actions/checkout@v4
-
-      - name: Unpack Latest Package Config
-        run: |
-          if [ -f setup_factory.py ]; then
-            python setup_factory.py --no-git
-          fi
-
-      - name: Download Bundle
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - run: |
+          if [ -f setup_factory.py ]; then python setup_factory.py --no-git; fi
+      - uses: actions/download-artifact@v4
         with:
           name: prepared-long
-
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
-
-      - name: Install Headless Chrome Libraries
-        run: |
+      - run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            ffmpeg libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 \
-            libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
-            libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 \
-            libasound2t64 || sudo apt-get install -y libasound2
+          sudo apt-get install -y ffmpeg libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 libasound2t64 || sudo apt-get install -y libasound2
           npm install --no-audit --no-fund
           npx remotion browser ensure
-
-      - name: Render Blueprint Chunk ${{ matrix.chunk.idx }}
-        run: |
           mkdir -p out
-          npx remotion render build_bundle Main out/chunk_${{ matrix.chunk.idx }}.mp4 \
-            --frames=${{ matrix.chunk.start }}-${{ matrix.chunk.end }} \
-            --muted \
-            --concurrency=2 \
-            --codec=h264 \
-            --pixel-format=yuv420p \
-            --crf=20 \
-            --x264-preset=veryfast
-
-      - name: Upload Chunk ${{ matrix.chunk.idx }}
-        uses: actions/upload-artifact@v4
+          npx remotion render build_bundle Main out/chunk_${{ matrix.chunk.idx }}.mp4 --frames=${{ matrix.chunk.start }}-${{ matrix.chunk.end }} --muted --concurrency=2 --codec=h264 --pixel-format=yuv420p --crf=20 --x264-preset=veryfast
+      - uses: actions/upload-artifact@v4
         with:
           name: long-chunk-${{ matrix.chunk.idx }}
           path: out/chunk_${{ matrix.chunk.idx }}.mp4
@@ -2697,46 +2034,27 @@ jobs:
     if: needs.plan_and_prepare.outputs.has_input == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
-
-      - name: Unpack Latest Stitcher
-        run: |
-          if [ -f setup_factory.py ]; then
-            python setup_factory.py --no-git
-          fi
-
-      - name: Download Audio & Metadata
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - run: |
+          if [ -f setup_factory.py ]; then python setup_factory.py --no-git; fi
+      - uses: actions/download-artifact@v4
         with:
           name: prepared-long
-
-      - name: Download All Chunks
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           pattern: long-chunk-*
           path: chunks
           merge-multiple: true
-
-      - name: Set up Python & FFmpeg
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Install FFmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-
-      - name: Stitch Master Video
+      - run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          python scripts/stitch_chunks.py
         env:
           VIDEO_FORMAT: "long_16_9"
-        run: python scripts/stitch_chunks.py
-
-      - name: Upload Final 1080p Video
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: CoreToGrid-Documentary-1080p
           path: |
@@ -2765,53 +2083,33 @@ jobs:
     outputs:
       has_input: ${{ steps.check_input.outputs.has_input }}
       chunks_json: ${{ steps.chunk_plan.outputs.chunks_json }}
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Auto-Unpack Latest setup_factory.py
-        run: |
-          if [ -f setup_factory.py ]; then
-            python setup_factory.py --no-git
-          fi
-
-      - name: Check input
-        id: check_input
+      - run: |
+          if [ -f setup_factory.py ]; then python setup_factory.py --no-git; fi
+      - id: check_input
         run: |
           shopt -s nullglob nocaseglob
           files=(input_short/*.mp3 input_short/*.wav input_short/*.m4a)
           echo "has_input=$([ ${#files[@]} -gt 0 ] && echo true || echo false)" >> $GITHUB_OUTPUT
-
-      - name: Setup Python
-        if: steps.check_input.outputs.has_input == 'true'
+      - if: steps.check_input.outputs.has_input == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Setup Node
-        if: steps.check_input.outputs.has_input == 'true'
+      - if: steps.check_input.outputs.has_input == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-
-      - name: Install System & Python Deps
-        if: steps.check_input.outputs.has_input == 'true'
+      - if: steps.check_input.outputs.has_input == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            ffmpeg libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 \
-            libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
-            libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 \
-            libasound2t64 || sudo apt-get install -y libasound2
+          sudo apt-get install -y ffmpeg libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 libasound2t64 || sudo apt-get install -y libasound2
           pip install -r requirements.txt
           npm install --no-audit
           npx remotion browser ensure
-
-      - name: Transcribe & Generate Vertical Scenes
-        if: steps.check_input.outputs.has_input == 'true'
+      - if: steps.check_input.outputs.has_input == 'true'
         env:
           INPUT_FOLDER: "input_short"
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -2826,9 +2124,7 @@ jobs:
           npx remotion still src/index.ts Main work/frame0_smoke.png --frame=0
           npx remotion bundle src/index.ts --public-dir public --out-dir build_bundle
           python scripts/plan_chunks.py
-
-      - name: Upload Short Bundle
-        if: steps.check_input.outputs.has_input == 'true'
+      - if: steps.check_input.outputs.has_input == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: prepared-short
@@ -2850,9 +2146,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: |
-          if [ -f setup_factory.py ]; then
-            python setup_factory.py --no-git
-          fi
+          if [ -f setup_factory.py ]; then python setup_factory.py --no-git; fi
       - uses: actions/download-artifact@v4
         with:
           name: prepared-short
@@ -2861,16 +2155,11 @@ jobs:
           node-version: "22"
       - run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            ffmpeg libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 \
-            libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
-            libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 \
-            libasound2t64 || sudo apt-get install -y libasound2
+          sudo apt-get install -y ffmpeg libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 libasound2t64 || sudo apt-get install -y libasound2
           npm install --no-audit
           npx remotion browser ensure
           mkdir -p out
-          npx remotion render build_bundle Main out/chunk_${{ matrix.chunk.idx }}.mp4 \
-            --frames=${{ matrix.chunk.start }}-${{ matrix.chunk.end }} --muted --concurrency=2
+          npx remotion render build_bundle Main out/chunk_${{ matrix.chunk.idx }}.mp4 --frames=${{ matrix.chunk.start }}-${{ matrix.chunk.end }} --muted --concurrency=2
       - uses: actions/upload-artifact@v4
         with:
           name: short-chunk-${{ matrix.chunk.idx }}
@@ -2883,9 +2172,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: |
-          if [ -f setup_factory.py ]; then
-            python setup_factory.py --no-git
-          fi
+          if [ -f setup_factory.py ]; then python setup_factory.py --no-git; fi
       - uses: actions/download-artifact@v4
         with:
           name: prepared-short
@@ -2911,12 +2198,7 @@ jobs:
 
 def write_all_files() -> None:
     print(f"[setup_factory] Unpacking {len(FILES)} CoreToGrid v5.2 files in {ROOT}...")
-    # Auto-clean any old v3 3D files that break tsc
-    for orphan in (
-        "src/components/Continuous3DWorld.tsx",
-        "src/components/HudOverlay.tsx",
-        "src/components/StudioKit.tsx",
-    ):
+    for orphan in ("src/components/Continuous3DWorld.tsx", "src/components/HudOverlay.tsx", "src/components/StudioKit.tsx"):
         p = ROOT / orphan
         if p.exists():
             p.unlink()
@@ -2943,7 +2225,7 @@ def run_git_push() -> None:
         return subprocess.run(["git", *args], cwd=str(ROOT), text=True, check=check)
 
     if git("rev-parse", "--is-inside-work-tree", check=False).returncode != 0:
-        print("\n[setup_factory] Notice: Not a git repo; unpacked files locally.")
+        print("\n[setup_factory] Not a git repo; unpacked files locally.")
         return
 
     git("add", ".")
@@ -2960,285 +2242,5 @@ if __name__ == "__main__":
         try:
             run_git_push()
         except subprocess.CalledProcessError as exc:
-            print(f"[setup_factory] Git notice: ({exc}). Commit or push manually if needed.")
-```
-
----
-
-### Paste 2: Update `.github/workflows/render_video.yml` (One-Time Hook)
-
-Now go to **`.github/workflows/render_video.yml`** on `github.com` $\rightarrow$ click the **Pencil icon** $\rightarrow$ `Ctrl + A` $\rightarrow$ `Backspace` $\rightarrow$ paste this $\rightarrow$ click **Commit changes**:
-
-```yaml
-name: CoreToGrid Documentary Factory (16:9)
-
-on:
-  push:
-    paths:
-      - "input/**"
-  workflow_dispatch:
-    inputs:
-      preview_seconds:
-        description: "0 = Full video, or 30 for quick test"
-        required: false
-        default: "0"
-        type: choice
-        options:
-          - "0"
-          - "30"
-      force_workers:
-        description: "Parallel cloud runners (auto = up to 20 workers)"
-        required: false
-        default: "auto"
-        type: choice
-        options:
-          - "auto"
-          - "4"
-          - "10"
-          - "20"
-      trim_silence:
-        description: "Trim pauses >0.65s?"
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
-      include_bgm:
-        description: "Include calm auto-ducked background music?"
-        required: false
-        default: "true"
-        type: choice
-        options:
-          - "true"
-          - "false"
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
-
-jobs:
-  plan_and_prepare:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    outputs:
-      has_input: ${{ steps.check_input.outputs.has_input }}
-      chunks_json: ${{ steps.chunk_plan.outputs.chunks_json }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Auto-Unpack Latest setup_factory.py
-        run: |
-          if [ -f setup_factory.py ]; then
-            python setup_factory.py --no-git
-          fi
-
-      - name: Check for input audio
-        id: check_input
-        run: |
-          shopt -s nullglob nocaseglob
-          files=(input/*.mp3 input/*.wav input/*.m4a input/*.aac input/*.flac input/*.mp4)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "has_input=false" >> $GITHUB_OUTPUT
-          else
-            echo "has_input=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Set up Python 3.11
-        if: steps.check_input.outputs.has_input == 'true'
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      - name: Set up Node.js 22
-        if: steps.check_input.outputs.has_input == 'true'
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Install FFmpeg & Headless Chrome OS Libraries
-        if: steps.check_input.outputs.has_input == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ffmpeg libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 \
-            libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
-            libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 \
-            libasound2t64 || sudo apt-get install -y libasound2
-
-      - name: Install Python & Node Packages
-        if: steps.check_input.outputs.has_input == 'true'
-        run: |
-          pip install -r requirements.txt
-          npm install --no-audit --no-fund
-          npx remotion browser ensure
-
-      - name: Step 1 - Transcribe & Vocal Emphasis Peaks
-        if: steps.check_input.outputs.has_input == 'true'
-        env:
-          INPUT_FOLDER: "input"
-          TRIM_SILENCE: ${{ github.event.inputs.trim_silence || 'false' }}
-          PREVIEW_SECONDS: ${{ github.event.inputs.preview_seconds || '0' }}
-        run: python scripts/analyze_audio.py
-
-      - name: Step 2 - Multi-Provider AI Blueprint Illustrator & Self-Healer
-        if: steps.check_input.outputs.has_input == 'true'
-        env:
-          INPUT_FOLDER: "input"
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          VIDEO_FORMAT: "long_16_9"
-        run: python scripts/generate_scenes.py
-
-      - name: Step 3 - Audit Blueprint Continuity
-        if: steps.check_input.outputs.has_input == 'true'
-        run: python scripts/validate_scenes.py
-
-      - name: Step 4 - Master Audio, BGM & 5 Crisp SFX Mix
-        if: steps.check_input.outputs.has_input == 'true'
-        env:
-          INCLUDE_BGM: ${{ github.event.inputs.include_bgm || 'true' }}
-        run: python scripts/mix_audio.py
-
-      - name: Step 5 - Frame 0 Smoke Test & Bundle
-        if: steps.check_input.outputs.has_input == 'true'
-        run: |
-          npx remotion still src/index.ts Main work/frame0_smoke.png --frame=0
-          npx remotion bundle src/index.ts --public-dir public --out-dir build_bundle
-
-      - name: Step 6 - Plan Up to 20 Parallel Workers
-        id: chunk_plan
-        if: steps.check_input.outputs.has_input == 'true'
-        env:
-          FORCE_WORKERS: ${{ github.event.inputs.force_workers || 'auto' }}
-        run: python scripts/plan_chunks.py
-
-      - name: Upload Prepared Bundle
-        if: steps.check_input.outputs.has_input == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: prepared-long
-          path: |
-            build_bundle/
-            work/master_audio.m4a
-            work/scene_plan.json
-            work/frame0_smoke.png
-          retention-days: 2
-
-  render_workers:
-    needs: plan_and_prepare
-    if: needs.plan_and_prepare.outputs.has_input == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        chunk: ${{ fromJson(needs.plan_and_prepare.outputs.chunks_json) }}
-
-    steps:
-      - name: Checkout Config
-        uses: actions/checkout@v4
-
-      - name: Unpack Latest Package Config
-        run: |
-          if [ -f setup_factory.py ]; then
-            python setup_factory.py --no-git
-          fi
-
-      - name: Download Bundle
-        uses: actions/download-artifact@v4
-        with:
-          name: prepared-long
-
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Install Headless Chrome Libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ffmpeg libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 \
-            libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
-            libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 \
-            libasound2t64 || sudo apt-get install -y libasound2
-          npm install --no-audit --no-fund
-          npx remotion browser ensure
-
-      - name: Render Blueprint Chunk ${{ matrix.chunk.idx }}
-        run: |
-          mkdir -p out
-          npx remotion render build_bundle Main out/chunk_${{ matrix.chunk.idx }}.mp4 \
-            --frames=${{ matrix.chunk.start }}-${{ matrix.chunk.end }} \
-            --muted \
-            --concurrency=2 \
-            --codec=h264 \
-            --pixel-format=yuv420p \
-            --crf=20 \
-            --x264-preset=veryfast
-
-      - name: Upload Chunk ${{ matrix.chunk.idx }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: long-chunk-${{ matrix.chunk.idx }}
-          path: out/chunk_${{ matrix.chunk.idx }}.mp4
-          retention-days: 1
-
-  stitch_final_video:
-    needs: [plan_and_prepare, render_workers]
-    if: needs.plan_and_prepare.outputs.has_input == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
-
-      - name: Unpack Latest Stitcher
-        run: |
-          if [ -f setup_factory.py ]; then
-            python setup_factory.py --no-git
-          fi
-
-      - name: Download Audio & Metadata
-        uses: actions/download-artifact@v4
-        with:
-          name: prepared-long
-
-      - name: Download All Chunks
-        uses: actions/download-artifact@v4
-        with:
-          pattern: long-chunk-*
-          path: chunks
-          merge-multiple: true
-
-      - name: Set up Python & FFmpeg
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install FFmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-
-      - name: Stitch Master Video
-        env:
-          VIDEO_FORMAT: "long_16_9"
-        run: python scripts/stitch_chunks.py
-
-      - name: Upload Final 1080p Video
-        uses: actions/upload-artifact@v4
-        with:
-          name: CoreToGrid-Documentary-1080p
-          path: |
-            out/final_video.mp4
-            work/frame0_smoke.png
-          retention-days: 7
+            print(f"[setup_factory] Git notice: ({exc}).")
+            sys.exit(exc.returncode)

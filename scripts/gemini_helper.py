@@ -10,7 +10,6 @@ from google import genai
 from google.genai import types
 from google.genai.errors import APIError
 
-# Priority 1 & 2: Gemini (fast thinking + 25s fail-safe)
 PRO_LADDER = [
     ("gemini-4-hydrogen", "low", 65536, True),
     ("gemini-3.8-flash", None, 32768, True),
@@ -21,25 +20,23 @@ FLASH_LADDER = [
     ("gemini-3.8-flash", None, 32768, True),
 ]
 
-# Priority 3A: Fast OpenRouter models (~200 tok/s, 45s timeout)
 OPENROUTER_FAST_MODELS = [
     "baidu/ernie-5.5-flash-preview:free",
     "openrouter/free",
 ]
 
-# Priority 3B: Groq Ultra-Fast models (~500 tok/s, 45s timeout)
 GROQ_FREE_MODELS = [
     "openai/gpt-oss-120b",
     "qwen/qwen3.8-27b",
 ]
 
-# Priority 4: Heavy OpenRouter backup models (90s timeout)
 OPENROUTER_HEAVY_MODELS = [
     "nvidia/nemotron-3.5-super-vl:free",
     "nvidia/nemotron-3-ultra-550b-a55b:free",
 ]
 
 _COOLDOWN_UNTIL: dict[str, float] = {}
+_FENCE = "\x60\x60\x60"
 
 
 def get_client() -> Optional[genai.Client]:
@@ -47,10 +44,7 @@ def get_client() -> Optional[genai.Client]:
     if not api_key:
         return None
     first_key = [k.strip() for k in api_key.split(",") if k.strip()][0]
-    return genai.Client(
-        api_key=first_key,
-        http_options=types.HttpOptions(timeout=25_000),  # 25s max wait so Gemini never stalls
-    )
+    return genai.Client(api_key=first_key, http_options=types.HttpOptions(timeout=25_000))
 
 
 def _strip_think(raw: str) -> str:
@@ -59,12 +53,11 @@ def _strip_think(raw: str) -> str:
 
 def clean_json_text(raw: str) -> str:
     text = _strip_think(raw)
-    fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+    fence_match = re.search(_FENCE + r"(?:json)?\s*([\s\S]*?)" + _FENCE, text)
     if fence_match:
         text = fence_match.group(1).strip()
     if not text.startswith("{") and "{" in text and "}" in text:
-        start = text.find("{")
-        end = text.rfind("}")
+        start, end = text.find("{"), text.rfind("}")
         if end > start:
             text = text[start : end + 1]
     return text
@@ -72,7 +65,7 @@ def clean_json_text(raw: str) -> str:
 
 def clean_tsx_text(raw: str) -> str:
     text = _strip_think(raw)
-    fence_match = re.search(r"```(?:tsx|typescript|ts|jsx)?\s*([\s\S]*?)```", text)
+    fence_match = re.search(_FENCE + r"(?:tsx|typescript|ts|jsx)?\s*([\s\S]*?)" + _FENCE, text)
     if fence_match:
         text = fence_match.group(1).strip()
     return text
@@ -89,7 +82,7 @@ def _call_openai_compat(
 ) -> str:
     final_prompt = prompt
     if json_mode:
-        final_prompt += "\n\nCRITICAL: Return ONLY one valid raw JSON object starting with { and ending with }. No markdown fences or extra text."
+        final_prompt += "\n\nCRITICAL: Return ONLY one valid raw JSON object starting with { and ending with }. No markdown fences."
 
     payload: dict[str, Any] = {
         "model": model,
@@ -97,7 +90,6 @@ def _call_openai_compat(
         "max_tokens": 16384,
         "temperature": 0.2,
     }
-
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -106,12 +98,7 @@ def _call_openai_compat(
     if extra_headers:
         headers.update(extra_headers)
 
-    req = urllib.request.Request(
-        endpoint,
-        data=json.dumps(payload).encode("utf-8"),
-        headers=headers,
-        method="POST",
-    )
+    req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
             data = json.loads(resp.read().decode("utf-8"))
@@ -125,7 +112,7 @@ def _call_openai_compat(
 
     if json_mode:
         cleaned = clean_json_text(content)
-        json.loads(cleaned)  # Verify valid JSON before accepting!
+        json.loads(cleaned)
         return cleaned
     return content
 
@@ -201,7 +188,6 @@ def generate_with_fallback(
     prompt_str = str(contents)
 
     for pass_num in range(1, 3):
-        # 1. Gemini Hydrogen -> 3.8 Flash (skips for 3 mins on 429/503)
         if client is not None:
             now = time.time()
             for model_name, thinking_lvl, cap, supports_json in ladder:
@@ -209,9 +195,7 @@ def generate_with_fallback(
                 if key in dead_models or _COOLDOWN_UNTIL.get(model_name, 0) > now:
                     continue
 
-                config_kwargs: dict[str, Any] = {
-                    "max_output_tokens": min(cap, max_output_tokens),
-                }
+                config_kwargs: dict[str, Any] = {"max_output_tokens": min(cap, max_output_tokens)}
                 if "gemini-4" not in model_name:
                     config_kwargs["temperature"] = temperature
                 if thinking_lvl:
@@ -220,14 +204,9 @@ def generate_with_fallback(
                     config_kwargs["response_mime_type"] = "application/json"
 
                 config = types.GenerateContentConfig(**config_kwargs)
-
                 try:
                     print(f"[ai_router] Priority -> {model_name} (think={thinking_lvl or 'off'})...", flush=True)
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=prompt_str,
-                        config=config,
-                    )
+                    response = client.models.generate_content(model=model_name, contents=prompt_str, config=config)
                     text = response.text or ""
                     if not text.strip():
                         raise RuntimeError(f"Empty response from {model_name}")
@@ -251,17 +230,14 @@ def generate_with_fallback(
                     _COOLDOWN_UNTIL[model_name] = time.time() + 120.0
                     print(f"[ai_router] {model_name} errored ({str(exc)[:120]}); switching...", flush=True)
 
-        # 2. Fast OpenRouter (Ernie 5.5 Flash / auto free)
         fast_or = _try_openrouter_list(OPENROUTER_FAST_MODELS, "Fast Tier", prompt_str, json_mode, timeout_sec=45)
         if fast_or:
             return fast_or
 
-        # 3. Groq Ultra-Fast (GPT-OSS 120B / Qwen 3.8 27B)
         groq_res = _try_groq(prompt_str, json_mode)
         if groq_res:
             return groq_res
 
-        # 4. Heavy OpenRouter Backup (Nemotron 3.5 / 3 Ultra 550B)
         heavy_or = _try_openrouter_list(OPENROUTER_HEAVY_MODELS, "Backup Tier", prompt_str, json_mode, timeout_sec=90)
         if heavy_or:
             return heavy_or
