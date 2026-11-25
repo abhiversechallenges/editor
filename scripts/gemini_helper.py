@@ -10,35 +10,30 @@ from google import genai
 from google.genai import types
 from google.genai.errors import APIError
 
-# Google AI Studio Free Tier Models (Nov 2026)
-# Note: Hydrogen is reserved primarily for the 1 Storyboard call (role="pro") to stay under its ~20 RPD free cap.
+# Priority 1 & 2: Gemini 4 Hydrogen -> Gemini 3.8 Flash
 PRO_LADDER = [
     ("gemini-4-hydrogen", "high", 65536, True),
     ("gemini-3.8-flash", "low", 32768, True),
-    ("gemini-3.6-flash", None, 32768, True),
-    ("gemini-3.5-flash-lite", None, 32768, True),
 ]
 
 FLASH_LADDER = [
-    ("gemini-3.8-flash", None, 32768, True),
-    ("gemini-3.6-flash", None, 32768, True),
-    ("gemini-3.5-flash-lite", None, 32768, True),
     ("gemini-4-hydrogen", "low", 65536, True),
-    ("gemini-3.1-flash-lite", None, 32768, True),
-    ("gemma-4-31b-it", None, 8192, False),
+    ("gemini-3.8-flash", None, 32768, True),
 ]
 
-# Free OpenAI-compatible backup providers (Add OPENROUTER_API_KEY / GROQ_API_KEY in GitHub Secrets)
+# Priority 3: OpenRouter Free Tier (verified active Nov 2026 slugs)
 OPENROUTER_FREE_MODELS = [
-    "nvidia/nemotron-3-ultra:free",
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "nvidia/nemotron-3.5-super-vl:free",
     "baidu/ernie-5.5-flash-preview:free",
     "cohere/north-mini-code:free",
     "openrouter/free",
 ]
 
+# Priority 4: Groq Free Tier
 GROQ_FREE_MODELS = [
     "openai/gpt-oss-120b",
-    "qwen/qwen3.6-27b",
+    "qwen/qwen3.8-27b",
 ]
 
 _COOLDOWN_UNTIL: dict[str, float] = {}
@@ -48,7 +43,6 @@ def get_client() -> Optional[genai.Client]:
     api_key = (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
     if not api_key:
         return None
-    # Support comma-separated keys if user supplies multiple project keys
     first_key = [k.strip() for k in api_key.split(",") if k.strip()][0]
     return genai.Client(
         api_key=first_key,
@@ -61,7 +55,6 @@ def clean_json_text(raw: str) -> str:
     fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
     if fence_match:
         text = fence_match.group(1).strip()
-    # Fallback: slice first { to last } if extra chatter surrounds JSON
     if not text.startswith("{") and "{" in text and "}" in text:
         start = text.find("{")
         end = text.rfind("}")
@@ -88,7 +81,7 @@ def _call_openai_compat(
 ) -> str:
     final_prompt = prompt
     if json_mode:
-        final_prompt += "\n\nCRITICAL: Return ONLY valid raw JSON object. Do not include markdown fences or explanations."
+        final_prompt += "\n\nCRITICAL: Return ONLY a valid raw JSON object. No markdown fences or extra text."
 
     payload: dict[str, Any] = {
         "model": model,
@@ -112,51 +105,61 @@ def _call_openai_compat(
         headers=headers,
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=180) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as err:
+        body = err.read().decode("utf-8", errors="ignore")[:220]
+        raise RuntimeError(f"HTTP {err.code}: {body}") from err
+
     content = data["choices"][0]["message"]["content"]
     if not content or not content.strip():
         raise RuntimeError(f"Empty response from {model}")
     return clean_json_text(content) if json_mode else content
 
 
-def _try_openrouter_and_groq(prompt: str, json_mode: bool) -> Optional[str]:
+def _try_openrouter(prompt: str, json_mode: bool) -> Optional[str]:
     or_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
-    if or_key:
-        for model in OPENROUTER_FREE_MODELS:
-            try:
-                print(f"[ai_router] Failing over to OpenRouter ({model})...", flush=True)
-                res = _call_openai_compat(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    or_key,
-                    model,
-                    prompt,
-                    json_mode,
-                    extra_headers={"HTTP-Referer": "https://github.com/CoreToGrid", "X-Title": "CoreToGrid"},
-                )
-                print(f"[ai_router] OpenRouter success with {model} ({len(res)} chars).", flush=True)
-                return res
-            except Exception as exc:
-                print(f"[ai_router] OpenRouter {model} skipped ({exc})", flush=True)
-                time.sleep(2)
+    if not or_key:
+        return None
+    for model in OPENROUTER_FREE_MODELS:
+        try:
+            print(f"[ai_router] Priority 3 -> OpenRouter ({model})...", flush=True)
+            res = _call_openai_compat(
+                "https://openrouter.ai/api/v1/chat/completions",
+                or_key,
+                model,
+                prompt,
+                json_mode,
+                extra_headers={"HTTP-Referer": "https://github.com/CoreToGrid", "X-Title": "CoreToGrid"},
+            )
+            print(f"[ai_router] OpenRouter success with {model} ({len(res)} chars).", flush=True)
+            return res
+        except Exception as exc:
+            print(f"[ai_router] OpenRouter {model} skipped ({exc})", flush=True)
+            time.sleep(1.5)
+    return None
 
+
+def _try_groq(prompt: str, json_mode: bool) -> Optional[str]:
     groq_key = (os.environ.get("GROQ_API_KEY") or "").strip()
-    if groq_key:
-        for model in GROQ_FREE_MODELS:
-            try:
-                print(f"[ai_router] Failing over to Groq ({model})...", flush=True)
-                res = _call_openai_compat(
-                    "https://api.groq.com/openai/v1/chat/completions",
-                    groq_key,
-                    model,
-                    prompt,
-                    json_mode,
-                )
-                print(f"[ai_router] Groq success with {model} ({len(res)} chars).", flush=True)
-                return res
-            except Exception as exc:
-                print(f"[ai_router] Groq {model} skipped ({exc})", flush=True)
-                time.sleep(2)
+    if not groq_key:
+        return None
+    for model in GROQ_FREE_MODELS:
+        try:
+            print(f"[ai_router] Priority 4 -> Groq ({model})...", flush=True)
+            res = _call_openai_compat(
+                "https://api.groq.com/openai/v1/chat/completions",
+                groq_key,
+                model,
+                prompt,
+                json_mode,
+            )
+            print(f"[ai_router] Groq success with {model} ({len(res)} chars).", flush=True)
+            return res
+        except Exception as exc:
+            print(f"[ai_router] Groq {model} skipped ({exc})", flush=True)
+            time.sleep(1.5)
     return None
 
 
@@ -173,8 +176,9 @@ def generate_with_fallback(
     last_error: Optional[Exception] = None
     prompt_str = str(contents)
 
-    if client is not None:
-        for pass_num in range(1, 3):
+    for pass_num in range(1, 3):
+        # 1. Try Priority 1 (Gemini 4 Hydrogen) then Priority 2 (Gemini 3.8 Flash)
+        if client is not None:
             now = time.time()
             for model_name, thinking_lvl, cap, supports_json in ladder:
                 key = f"{model_name}:{thinking_lvl}"
@@ -184,7 +188,6 @@ def generate_with_fallback(
                 config_kwargs: dict[str, Any] = {
                     "max_output_tokens": min(cap, max_output_tokens),
                 }
-                # Gemini 4 Hydrogen ignores/forbids custom sampling params in strict agentic mode
                 if "gemini-4" not in model_name:
                     config_kwargs["temperature"] = temperature
                 if thinking_lvl:
@@ -192,57 +195,52 @@ def generate_with_fallback(
                 if json_mode and supports_json:
                     config_kwargs["response_mime_type"] = "application/json"
 
-                final_contents = prompt_str
-                if json_mode and not supports_json:
-                    final_contents = prompt_str + "\n\nCRITICAL: Return ONLY valid raw JSON with no markdown fences."
-
                 config = types.GenerateContentConfig(**config_kwargs)
 
                 try:
-                    print(f"[gemini_helper] Pass {pass_num} -> {model_name} (think={thinking_lvl or 'off'})...", flush=True)
+                    print(f"[ai_router] Priority -> {model_name} (think={thinking_lvl or 'off'})...", flush=True)
                     response = client.models.generate_content(
                         model=model_name,
-                        contents=final_contents,
+                        contents=prompt_str,
                         config=config,
                     )
                     text = response.text or ""
                     if not text.strip():
                         raise RuntimeError(f"Empty response from {model_name}")
-                    print(f"[gemini_helper] Success with {model_name} ({len(text)} chars).", flush=True)
+                    print(f"[ai_router] Success with {model_name} ({len(text)} chars).", flush=True)
                     return clean_json_text(text) if json_mode else text
                 except APIError as exc:
                     last_error = exc
                     msg = str(exc).lower()
                     if any(k in msg for k in ("404", "403", "400", "not found", "unsupported", "limit: 0")):
-                        print(f"[gemini_helper] {model_name} unavailable/unsupported ({exc}); skipping.", flush=True)
+                        print(f"[ai_router] {model_name} unsupported ({exc}); skipping.", flush=True)
                         dead_models.add(key)
-                        continue
-                    if "429" in msg or "quota" in msg or "exhausted" in msg or "503" in msg:
+                    elif "429" in msg or "quota" in msg or "exhausted" in msg or "503" in msg:
                         _COOLDOWN_UNTIL[model_name] = time.time() + 65.0
-                        print(f"[gemini_helper] {model_name} rate-limited (429/503); cooling 65s & switching...", flush=True)
-                        time.sleep(6)
+                        print(f"[ai_router] {model_name} rate-limited (429/503); switching immediately...", flush=True)
+                        time.sleep(1.5)
                     else:
-                        time.sleep(4)
+                        time.sleep(2)
                 except Exception as exc:
                     last_error = exc
-                    time.sleep(3)
+                    time.sleep(2)
 
-            # Try OpenRouter / Groq before waiting for Pass 2 on Gemini!
-            backup = _try_openrouter_and_groq(prompt_str, json_mode)
-            if backup:
-                return backup
+        # 2. Try Priority 3 (OpenRouter Free)
+        or_res = _try_openrouter(prompt_str, json_mode)
+        if or_res:
+            return or_res
 
-            if pass_num == 1:
-                _COOLDOWN_UNTIL.clear()
-                print("[gemini_helper] Pass 1 exhausted; waiting 18s for RPM bucket reset...", flush=True)
-                time.sleep(18)
+        # 3. Try Priority 4 (Groq Free)
+        groq_res = _try_groq(prompt_str, json_mode)
+        if groq_res:
+            return groq_res
 
-    # Final check against OpenRouter / Groq if Gemini key was omitted or completely blocked
-    backup = _try_openrouter_and_groq(prompt_str, json_mode)
-    if backup:
-        return backup
+        if pass_num == 1:
+            _COOLDOWN_UNTIL.clear()
+            print("[ai_router] All 4 tiers busy; waiting 20s before retry pass...", flush=True)
+            time.sleep(20)
 
-    raise RuntimeError(f"All AI models (Gemini + OpenRouter + Groq) failed. Last error: {last_error}")
+    raise RuntimeError(f"All tiers (Hydrogen -> 3.8 Flash -> OpenRouter -> Groq) failed. Last error: {last_error}")
 
 
 def parse_json_strict(raw: str) -> Any:
