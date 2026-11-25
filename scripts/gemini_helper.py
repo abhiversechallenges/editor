@@ -10,10 +10,10 @@ from google import genai
 from google.genai import types
 from google.genai.errors import APIError
 
-# Priority 1 & 2: Gemini 4 Hydrogen -> Gemini 3.8 Flash
+# Priority 1 & 2: Gemini (fast thinking + 25s fail-safe)
 PRO_LADDER = [
-    ("gemini-4-hydrogen", "high", 65536, True),
-    ("gemini-3.8-flash", "low", 32768, True),
+    ("gemini-4-hydrogen", "low", 65536, True),
+    ("gemini-3.8-flash", None, 32768, True),
 ]
 
 FLASH_LADDER = [
@@ -21,18 +21,22 @@ FLASH_LADDER = [
     ("gemini-3.8-flash", None, 32768, True),
 ]
 
-# Priority 3: OpenRouter Free Tier (requires ZDR OFF in openrouter.ai/settings/privacy)
-OPENROUTER_FREE_MODELS = [
-    "nvidia/nemotron-3-ultra-550b-a55b:free",
-    "nvidia/nemotron-3.5-super-vl:free",
+# Priority 3A: Fast OpenRouter models (~200 tok/s, 45s timeout)
+OPENROUTER_FAST_MODELS = [
     "baidu/ernie-5.5-flash-preview:free",
     "openrouter/free",
 ]
 
-# Priority 4: Groq Free Tier
+# Priority 3B: Groq Ultra-Fast models (~500 tok/s, 45s timeout)
 GROQ_FREE_MODELS = [
     "openai/gpt-oss-120b",
     "qwen/qwen3.8-27b",
+]
+
+# Priority 4: Heavy OpenRouter backup models (90s timeout)
+OPENROUTER_HEAVY_MODELS = [
+    "nvidia/nemotron-3.5-super-vl:free",
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
 ]
 
 _COOLDOWN_UNTIL: dict[str, float] = {}
@@ -45,12 +49,16 @@ def get_client() -> Optional[genai.Client]:
     first_key = [k.strip() for k in api_key.split(",") if k.strip()][0]
     return genai.Client(
         api_key=first_key,
-        http_options=types.HttpOptions(timeout=600_000),
+        http_options=types.HttpOptions(timeout=25_000),  # 25s max wait so Gemini never stalls
     )
 
 
+def _strip_think(raw: str) -> str:
+    return re.sub(r"<think>[\s\S]*?</think>", "", raw or "").strip()
+
+
 def clean_json_text(raw: str) -> str:
-    text = (raw or "").strip()
+    text = _strip_think(raw)
     fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
     if fence_match:
         text = fence_match.group(1).strip()
@@ -63,7 +71,7 @@ def clean_json_text(raw: str) -> str:
 
 
 def clean_tsx_text(raw: str) -> str:
-    text = (raw or "").strip()
+    text = _strip_think(raw)
     fence_match = re.search(r"```(?:tsx|typescript|ts|jsx)?\s*([\s\S]*?)```", text)
     if fence_match:
         text = fence_match.group(1).strip()
@@ -76,20 +84,19 @@ def _call_openai_compat(
     model: str,
     prompt: str,
     json_mode: bool,
+    timeout_sec: int,
     extra_headers: Optional[dict[str, str]] = None,
 ) -> str:
     final_prompt = prompt
     if json_mode:
-        final_prompt += "\n\nCRITICAL: Return ONLY a valid raw JSON object. No markdown fences or extra text."
+        final_prompt += "\n\nCRITICAL: Return ONLY one valid raw JSON object starting with { and ending with }. No markdown fences or extra text."
 
     payload: dict[str, Any] = {
         "model": model,
         "messages": [{"role": "user", "content": final_prompt}],
         "max_tokens": 16384,
-        "temperature": 0.25,
+        "temperature": 0.2,
     }
-    if json_mode:
-        payload["response_format"] = {"type": "json_object"}
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -106,7 +113,7 @@ def _call_openai_compat(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
+        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as err:
         body = err.read().decode("utf-8", errors="ignore")[:220]
@@ -115,29 +122,40 @@ def _call_openai_compat(
     content = data["choices"][0]["message"]["content"]
     if not content or not content.strip():
         raise RuntimeError(f"Empty response from {model}")
-    return clean_json_text(content) if json_mode else content
+
+    if json_mode:
+        cleaned = clean_json_text(content)
+        json.loads(cleaned)  # Verify valid JSON before accepting!
+        return cleaned
+    return content
 
 
-def _try_openrouter(prompt: str, json_mode: bool) -> Optional[str]:
+def _try_openrouter_list(models: list[str], label: str, prompt: str, json_mode: bool, timeout_sec: int) -> Optional[str]:
     or_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
     if not or_key:
         return None
-    for model in OPENROUTER_FREE_MODELS:
+    for model in models:
+        if _COOLDOWN_UNTIL.get(model, 0) > time.time():
+            continue
         try:
-            print(f"[ai_router] Priority 3 -> OpenRouter ({model})...", flush=True)
+            print(f"[ai_router] {label} -> OpenRouter ({model})...", flush=True)
             res = _call_openai_compat(
                 "https://openrouter.ai/api/v1/chat/completions",
                 or_key,
                 model,
                 prompt,
                 json_mode,
+                timeout_sec=timeout_sec,
                 extra_headers={"HTTP-Referer": "https://github.com/CoreToGrid", "X-Title": "CoreToGrid"},
             )
             print(f"[ai_router] OpenRouter success with {model} ({len(res)} chars).", flush=True)
             return res
         except Exception as exc:
-            print(f"[ai_router] OpenRouter {model} skipped ({exc})", flush=True)
-            time.sleep(1.5)
+            msg = str(exc)
+            if "429" in msg or "404" in msg:
+                _COOLDOWN_UNTIL[model] = time.time() + 120.0
+            print(f"[ai_router] OpenRouter {model} skipped ({msg[:160]})", flush=True)
+            time.sleep(1)
     return None
 
 
@@ -146,20 +164,26 @@ def _try_groq(prompt: str, json_mode: bool) -> Optional[str]:
     if not groq_key:
         return None
     for model in GROQ_FREE_MODELS:
+        if _COOLDOWN_UNTIL.get(model, 0) > time.time():
+            continue
         try:
-            print(f"[ai_router] Priority 4 -> Groq ({model})...", flush=True)
+            print(f"[ai_router] Fast Tier -> Groq ({model})...", flush=True)
             res = _call_openai_compat(
                 "https://api.groq.com/openai/v1/chat/completions",
                 groq_key,
                 model,
                 prompt,
                 json_mode,
+                timeout_sec=45,
             )
             print(f"[ai_router] Groq success with {model} ({len(res)} chars).", flush=True)
             return res
         except Exception as exc:
-            print(f"[ai_router] Groq {model} skipped ({exc})", flush=True)
-            time.sleep(1.5)
+            msg = str(exc)
+            if "429" in msg:
+                _COOLDOWN_UNTIL[model] = time.time() + 65.0
+            print(f"[ai_router] Groq {model} skipped ({msg[:160]})", flush=True)
+            time.sleep(1)
     return None
 
 
@@ -177,11 +201,12 @@ def generate_with_fallback(
     prompt_str = str(contents)
 
     for pass_num in range(1, 3):
+        # 1. Gemini Hydrogen -> 3.8 Flash (skips for 3 mins on 429/503)
         if client is not None:
             now = time.time()
             for model_name, thinking_lvl, cap, supports_json in ladder:
                 key = f"{model_name}:{thinking_lvl}"
-                if key in dead_models or (pass_num == 1 and _COOLDOWN_UNTIL.get(model_name, 0) > now):
+                if key in dead_models or _COOLDOWN_UNTIL.get(model_name, 0) > now:
                     continue
 
                 config_kwargs: dict[str, Any] = {
@@ -206,38 +231,47 @@ def generate_with_fallback(
                     text = response.text or ""
                     if not text.strip():
                         raise RuntimeError(f"Empty response from {model_name}")
+                    if json_mode:
+                        cleaned = clean_json_text(text)
+                        json.loads(cleaned)
+                        print(f"[ai_router] Success with {model_name} ({len(cleaned)} chars).", flush=True)
+                        return cleaned
                     print(f"[ai_router] Success with {model_name} ({len(text)} chars).", flush=True)
-                    return clean_json_text(text) if json_mode else text
+                    return text
                 except APIError as exc:
                     last_error = exc
                     msg = str(exc).lower()
                     if any(k in msg for k in ("404", "403", "400", "not found", "unsupported", "limit: 0")):
-                        print(f"[ai_router] {model_name} unsupported ({exc}); skipping.", flush=True)
                         dead_models.add(key)
                     elif "429" in msg or "quota" in msg or "exhausted" in msg or "503" in msg:
-                        _COOLDOWN_UNTIL[model_name] = time.time() + 65.0
-                        print(f"[ai_router] {model_name} rate-limited (429/503); switching immediately...", flush=True)
-                        time.sleep(1.5)
-                    else:
-                        time.sleep(2)
+                        _COOLDOWN_UNTIL[model_name] = time.time() + 180.0
+                        print(f"[ai_router] {model_name} busy (429/503); pausing 3m & switching...", flush=True)
                 except Exception as exc:
                     last_error = exc
-                    time.sleep(2)
+                    _COOLDOWN_UNTIL[model_name] = time.time() + 120.0
+                    print(f"[ai_router] {model_name} errored ({str(exc)[:120]}); switching...", flush=True)
 
-        or_res = _try_openrouter(prompt_str, json_mode)
-        if or_res:
-            return or_res
+        # 2. Fast OpenRouter (Ernie 5.5 Flash / auto free)
+        fast_or = _try_openrouter_list(OPENROUTER_FAST_MODELS, "Fast Tier", prompt_str, json_mode, timeout_sec=45)
+        if fast_or:
+            return fast_or
 
+        # 3. Groq Ultra-Fast (GPT-OSS 120B / Qwen 3.8 27B)
         groq_res = _try_groq(prompt_str, json_mode)
         if groq_res:
             return groq_res
 
+        # 4. Heavy OpenRouter Backup (Nemotron 3.5 / 3 Ultra 550B)
+        heavy_or = _try_openrouter_list(OPENROUTER_HEAVY_MODELS, "Backup Tier", prompt_str, json_mode, timeout_sec=90)
+        if heavy_or:
+            return heavy_or
+
         if pass_num == 1:
             _COOLDOWN_UNTIL.clear()
-            print("[ai_router] All 4 tiers busy; waiting 20s before retry pass...", flush=True)
-            time.sleep(20)
+            print("[ai_router] All providers busy; waiting 12s before final retry...", flush=True)
+            time.sleep(12)
 
-    raise RuntimeError(f"All tiers (Hydrogen -> 3.8 Flash -> OpenRouter -> Groq) failed. Last error: {last_error}")
+    raise RuntimeError(f"All AI tiers failed. Last error: {last_error}")
 
 
 def parse_json_strict(raw: str) -> Any:
