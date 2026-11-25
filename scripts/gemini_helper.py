@@ -21,12 +21,11 @@ FLASH_LADDER = [
     ("gemini-3.8-flash", None, 32768, True),
 ]
 
-# Priority 3: OpenRouter Free Tier (verified active Nov 2026 slugs)
+# Priority 3: OpenRouter Free Tier (requires ZDR OFF in openrouter.ai/settings/privacy)
 OPENROUTER_FREE_MODELS = [
     "nvidia/nemotron-3-ultra-550b-a55b:free",
     "nvidia/nemotron-3.5-super-vl:free",
     "baidu/ernie-5.5-flash-preview:free",
-    "cohere/north-mini-code:free",
     "openrouter/free",
 ]
 
@@ -95,6 +94,7 @@ def _call_openai_compat(
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
+        "User-Agent": "OpenAI/Python",
     }
     if extra_headers:
         headers.update(extra_headers)
@@ -177,7 +177,6 @@ def generate_with_fallback(
     prompt_str = str(contents)
 
     for pass_num in range(1, 3):
-        # 1. Try Priority 1 (Gemini 4 Hydrogen) then Priority 2 (Gemini 3.8 Flash)
         if client is not None:
             now = time.time()
             for model_name, thinking_lvl, cap, supports_json in ladder:
@@ -225,12 +224,10 @@ def generate_with_fallback(
                     last_error = exc
                     time.sleep(2)
 
-        # 2. Try Priority 3 (OpenRouter Free)
         or_res = _try_openrouter(prompt_str, json_mode)
         if or_res:
             return or_res
 
-        # 3. Try Priority 4 (Groq Free)
         groq_res = _try_groq(prompt_str, json_mode)
         if groq_res:
             return groq_res
