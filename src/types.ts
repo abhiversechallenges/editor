@@ -1,16 +1,13 @@
 export type BackdropTheme =
-  | "night_mountains"
-  | "sunset_horizon"
-  | "daylight_city"
-  | "graph_paper"
-  | "notebook_lined"
-  | "world_map"
-  | "warm_office"
-  | "steel_vault"
+  | "isometric_blueprint"
+  | "xray_cutaway"
+  | "substation_grid"
+  | "cleanroom_fab"
+  | "thermal_flow"
+  | "server_corridor"
   | "dark_industrial"
-  | "news_document"
-  | "split_3panel"
-  | "black_title_card";
+  | "black_title_card"
+  | "split_3panel";
 
 export type CameraMove2D =
   | "push_in"
@@ -62,8 +59,6 @@ export interface CartoonPlan {
   width: number;
   height: number;
   totalDurationSec: number;
-  hasAudio: boolean;
   bpm: number;
-  emphasisPeaksSec: number[];
   scenes: CartoonScene[];
 }

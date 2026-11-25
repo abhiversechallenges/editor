@@ -5,10 +5,8 @@ import { SCENE_PLAN } from "./ScenesData";
 
 export const GENERATED_TOTAL_FRAMES = 180;
 
-export const GeneratedTimeline: React.FC = () => {
-  return (
-    <AbsoluteFill>
-      <CartoonStage2D plan={SCENE_PLAN} />
-    </AbsoluteFill>
-  );
-};
+export const GeneratedTimeline: React.FC = () => (
+  <AbsoluteFill>
+    <CartoonStage2D plan={SCENE_PLAN} />
+  </AbsoluteFill>
+);

@@ -32,7 +32,7 @@ export const CartoonStage2D: React.FC<{ plan: CartoonPlan }> = ({ plan }) => {
   const { width, height, fps } = useVideoConfig();
   const tSec = frame / fps;
   const isVertical = height > width;
-  const transSec = 0.28; // Snappy 8-frame human-editor transition
+  const transSec = 0.24;
 
   let activeIdx = plan.scenes.findIndex((s) => tSec >= s.startSec && tSec <= s.endSec);
   if (activeIdx === -1) activeIdx = plan.scenes.length - 1;
@@ -60,7 +60,7 @@ export const CartoonStage2D: React.FC<{ plan: CartoonPlan }> = ({ plan }) => {
       : 0;
 
   return (
-    <AbsoluteFill style={{ backgroundColor: "#05070B", overflow: "hidden" }}>
+    <AbsoluteFill style={{ backgroundColor: "#050811", overflow: "hidden" }}>
       {inTransition && prevScene && PrevComp && (
         <AbsoluteFill>
           <PrevComp

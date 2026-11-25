@@ -1,10 +1,6 @@
 import React from "react";
 import {
-  SceneBackdrop2D,
-  Camera2D,
-  CartoonCharacter2D,
-  Microchip2D,
-  InkCallout2D,
+  SceneBackdrop2D, Camera2D, TelemetryHUD2D, MicrochannelColdPlate2D, TechnicalCallout2D
 } from "../../components/CartoonKit2D";
 import type { Scene2DProps } from "../../types";
 
@@ -15,34 +11,34 @@ export const Scene_01: React.FC<Scene2DProps> = (props) => {
     <svg viewBox={vb} style={{ width: "100%", height: "100%", display: "block" }}>
       <SceneBackdrop2D theme={backdropTheme} frame={frame} accentHex={accentHex} />
       <Camera2D move={cameraMove} progress={progress} frame={frame} peakTimes={peakTimes} localTime={localTime}>
-        <CartoonCharacter2D
-          x={isVertical ? 330 : 540}
-          y={isVertical ? 1120 : 690}
-          scale={1.35}
-          variant="ceo"
-          mood="worried"
-          pose="hold_up"
-          glasses={true}
-          sweatDrop={true}
-          frame={frame}
-        />
-        <Microchip2D
-          x={isVertical ? 650 : 1220}
-          y={isVertical ? 760 : 530}
-          scale={1.45}
-          color={accentHex}
-          cracked={true}
+        <MicrochannelColdPlate2D
+          x={isVertical ? 540 : 880}
+          y={isVertical ? 960 : 540}
+          scale={1.3}
+          coolantTempC={62}
           frame={frame}
           progress={progress}
         />
-        <InkCallout2D
-          x={isVertical ? 540 : 1480}
-          y={isVertical ? 320 : 210}
-          text="$100B"
-          color="#EF4444"
-          fontSize={86}
+        <TelemetryHUD2D
+          x={isVertical ? 120 : 120}
+          y={isVertical ? 240 : 180}
+          title="COLD PLATE TELEMETRY"
+          metrics={[
+            { label: "COOLANT INLET", value: "32.0", unit: "C" },
+            { label: "COOLANT OUTLET", value: "62.4", unit: "C", alert: true },
+            { label: "FLOW RATE", value: "2.1", unit: "LPM" },
+          ]}
+          progress={progress}
+        />
+        <TechnicalCallout2D
+          x={isVertical ? 540 : 1420}
+          y={isVertical ? 1520 : 480}
+          text="40um COPPER CHANNELS"
+          subtext="Direct-to-Die Interface"
+          color="#00F0FF"
           localTime={localTime}
           delaySec={0.2}
+          arrowTo={[isVertical ? 540 : 880, isVertical ? 960 : 540]}
         />
       </Camera2D>
     </svg>

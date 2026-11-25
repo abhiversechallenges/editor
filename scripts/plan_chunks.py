@@ -13,15 +13,17 @@ def main() -> None:
     total_frames = max(60, int(round(float(plan["totalDurationSec"]) * fps)))
 
     force = os.environ.get("FORCE_WORKERS", "auto").strip().lower()
-    if force in {"1", "4", "6"}:
+    if force.isdigit():
         workers = int(force)
     else:
-        if total_frames <= 2700:
-            workers = 1
-        elif total_frames <= 9000:
+        if total_frames <= 1800:
             workers = 4
+        elif total_frames <= 5400:
+            workers = 8
+        elif total_frames <= 13500:
+            workers = 14
         else:
-            workers = 6
+            workers = 20
 
     workers = min(workers, total_frames)
     chunk_size = math.ceil(total_frames / workers)
@@ -34,7 +36,7 @@ def main() -> None:
             chunks.append({"idx": idx, "start": start_f, "end": end_f})
 
     chunks_json = json.dumps(chunks)
-    print(f"[plan_chunks] total_frames={total_frames}, workers={len(chunks)}")
+    print(f"[plan_chunks] total_frames={total_frames}, parallel_workers={len(chunks)}")
 
     gh_out = os.environ.get("GITHUB_OUTPUT")
     if gh_out:

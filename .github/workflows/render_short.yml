@@ -1,36 +1,14 @@
-name: Shorts Factory (9:16 Vertical)
+name: CoreToGrid Shorts Factory (9:16)
 
 on:
   push:
     paths:
       - "input_short/**"
   workflow_dispatch:
-    inputs:
-      include_bgm:
-        description: "Include auto background music?"
-        required: false
-        default: "true"
-        type: choice
-        options:
-          - "true"
-          - "false"
-      trim_silence:
-        description: "Trim long pauses (>0.65s) in Short voiceover?"
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
-      whisper_model:
-        description: "Whisper speech model size"
-        required: false
-        default: "small"
-        type: choice
-        options:
-          - "tiny"
-          - "base"
-          - "small"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   plan_and_prepare:
@@ -41,105 +19,61 @@ jobs:
       chunks_json: ${{ steps.chunk_plan.outputs.chunks_json }}
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Check for uploaded audio inside input_short/
+      - name: Check input
         id: check_input
         run: |
           shopt -s nullglob nocaseglob
-          files=(input_short/*.mp3 input_short/*.wav input_short/*.m4a input_short/*.aac input_short/*.flac input_short/*.ogg input_short/*.mp4 input_short/*.mov input_short/*.mkv input_short/*.webm)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "has_input=false" >> $GITHUB_OUTPUT
-          else
-            echo "has_input=true" >> $GITHUB_OUTPUT
-            echo "Found 9:16 Short audio: ${files[*]}"
-          fi
+          files=(input_short/*.mp3 input_short/*.wav input_short/*.m4a)
+          echo "has_input=$([ ${#files[@]} -gt 0 ] && echo true || echo false)" >> $GITHUB_OUTPUT
 
-      - name: Set up Python 3.11
+      - name: Setup Python
         if: steps.check_input.outputs.has_input == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
 
-      - name: Set up Node.js 22
+      - name: Setup Node
         if: steps.check_input.outputs.has_input == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      - name: Install FFmpeg & Headless Chrome libraries
+      - name: Install System & Python Deps
         if: steps.check_input.outputs.has_input == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            ffmpeg \
-            libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 \
+            ffmpeg libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 \
             libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
             libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 \
             libasound2t64 || sudo apt-get install -y libasound2
-
-      - name: Install Python dependencies
-        if: steps.check_input.outputs.has_input == 'true'
-        run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Install Node dependencies & Remotion Headless Chrome
-        if: steps.check_input.outputs.has_input == 'true'
-        run: |
-          npm install --no-audit --no-fund
+          npm install --no-audit
           npx remotion browser ensure
 
-      - name: Step 1 - Clean Short Audio & Word Sync
-        if: steps.check_input.outputs.has_input == 'true'
-        env:
-          INPUT_FOLDER: "input_short"
-          TRIM_SILENCE: ${{ github.event.inputs.trim_silence || 'false' }}
-          WHISPER_MODEL: ${{ github.event.inputs.whisper_model || 'small' }}
-          PREVIEW_SECONDS: "0"
-        run: |
-          python scripts/analyze_audio.py
-
-      - name: Step 2 - Gemini Vertical 9:16 2D Cartoon Illustrator
+      - name: Transcribe & Generate Vertical Scenes
         if: steps.check_input.outputs.has_input == 'true'
         env:
           INPUT_FOLDER: "input_short"
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           VIDEO_FORMAT: "short_9_16"
         run: |
+          python scripts/analyze_audio.py
           python scripts/generate_scenes.py
-
-      - name: Step 3 - Audit Zero Repetition & Continuous Flow
-        if: steps.check_input.outputs.has_input == 'true'
-        run: |
           python scripts/validate_scenes.py
-
-      - name: Step 4 - Synthesize & Sync SFX + Underscore Audio
-        if: steps.check_input.outputs.has_input == 'true'
-        env:
-          INCLUDE_BGM: ${{ github.event.inputs.include_bgm || 'true' }}
-        run: |
           python scripts/mix_audio.py
-
-      - name: Step 5 - Frame 0 Smoke Test & Bundle Once
-        if: steps.check_input.outputs.has_input == 'true'
-        run: |
           npx remotion still src/index.ts Main work/frame0_smoke.png --frame=0
           npx remotion bundle src/index.ts --public-dir public --out-dir build_bundle
-
-      - name: Step 6 - Plan Workers
-        id: chunk_plan
-        if: steps.check_input.outputs.has_input == 'true'
-        env:
-          FORCE_WORKERS: "auto"
-        run: |
           python scripts/plan_chunks.py
 
-      - name: Upload Prepared Short Bundle
+      - name: Upload Short Bundle
         if: steps.check_input.outputs.has_input == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -148,115 +82,65 @@ jobs:
             build_bundle/
             work/master_audio.m4a
             work/scene_plan.json
-            work/transcript.json
-            work/frame0_smoke.png
           retention-days: 2
 
   render_workers:
     needs: plan_and_prepare
     if: needs.plan_and_prepare.outputs.has_input == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         chunk: ${{ fromJson(needs.plan_and_prepare.outputs.chunks_json) }}
-
     steps:
-      - name: Checkout repository config
-        uses: actions/checkout@v4
-
-      - name: Download Prepared Remotion Bundle
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
           name: prepared-short
-
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
-
-      - name: Install Headless Chrome OS libraries
-        run: |
+      - run: |
           sudo apt-get update
           sudo apt-get install -y \
-            ffmpeg \
-            libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 \
+            ffmpeg libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libxrandr2 \
             libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
             libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 \
             libasound2t64 || sudo apt-get install -y libasound2
-
-      - name: Install Node packages & Remotion Chrome
-        run: |
-          npm install --no-audit --no-fund
+          npm install --no-audit
           npx remotion browser ensure
-
-      - name: Render Vertical 9:16 2D Chunk ${{ matrix.chunk.idx }}
-        run: |
           mkdir -p out
           npx remotion render build_bundle Main out/chunk_${{ matrix.chunk.idx }}.mp4 \
-            --frames=${{ matrix.chunk.start }}-${{ matrix.chunk.end }} \
-            --muted \
-            --concurrency=3 \
-            --codec=h264 \
-            --pixel-format=yuv420p \
-            --crf=21 \
-            --x264-preset=veryfast \
-            --image-format=jpeg \
-            --jpeg-quality=92
-
-      - name: Upload Short Chunk ${{ matrix.chunk.idx }}
-        uses: actions/upload-artifact@v4
+            --frames=${{ matrix.chunk.start }}-${{ matrix.chunk.end }} --muted --concurrency=2
+      - uses: actions/upload-artifact@v4
         with:
           name: short-chunk-${{ matrix.chunk.idx }}
           path: out/chunk_${{ matrix.chunk.idx }}.mp4
-          retention-days: 2
 
   stitch_final_short:
     needs: [plan_and_prepare, render_workers]
     if: needs.plan_and_prepare.outputs.has_input == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-
     steps:
-      - name: Checkout Stitcher Script
-        uses: actions/checkout@v4
-
-      - name: Download Prepared Audio & Metadata
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
           name: prepared-short
-
-      - name: Download All Short Chunks
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           pattern: short-chunk-*
           path: chunks
           merge-multiple: true
-
-      - name: Set up Python & FFmpeg
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Install FFmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-
-      - name: Join Short Video + Master Audio
+      - run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          python scripts/stitch_chunks.py
         env:
           VIDEO_FORMAT: "short_9_16"
-        run: |
-          python scripts/stitch_chunks.py
-
-      - name: Upload Final 9:16 Short
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: InfraVerse-Short-9-16
-          path: |
-            out/final_short.mp4
-            work/frame0_smoke.png
-            work/scene_plan.json
-            work/transcript.json
-          retention-days: 7
+          name: CoreToGrid-Short-9-16
+          path: out/final_short.mp4

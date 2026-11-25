@@ -1,0 +1,26 @@
+{
+  "name": "CoreToGrid Cloud Studio (16GB)",
+  "image": "mcr.microsoft.com/devcontainers/universal:linux",
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "16gb"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    }
+  },
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y ffmpeg libnss3 libasound2t64 libgbm1 || sudo apt-get install -y ffmpeg libnss3 libasound2 libgbm1; pip install -r requirements.txt && npm install --no-audit",
+  "forwardPorts": [3000],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "GoogleCloud.gemini-duet",
+        "dbaeumer.vscode-eslint"
+      ]
+    }
+  }
+}

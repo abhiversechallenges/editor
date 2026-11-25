@@ -1,8 +1,8 @@
 {
-  "name": "infraverse-2d-cartoon-factory",
-  "version": "4.0.0",
+  "name": "core-to-grid-visual-factory",
+  "version": "5.1.0",
   "private": true,
-  "description": "Video-1 style 2D vector cartoon & motion graphics documentary factory",
+  "description": "Technical blueprint explainer engine for AI hardware & energy infrastructure",
   "scripts": {
     "dev": "remotion studio src/index.ts",
     "build": "remotion bundle src/index.ts --public-dir public --out-dir build_bundle",

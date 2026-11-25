@@ -6,7 +6,9 @@ work/*
 out/*
 !out/.gitkeep
 public/audio/*.mp3
+public/audio/*.wav
 public/audio/sfx/*.mp3
+public/audio/sfx/*.wav
 !public/audio/.gitkeep
 !public/audio/sfx/.gitkeep
 __pycache__/

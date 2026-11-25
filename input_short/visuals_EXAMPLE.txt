@@ -1,2 +1,1 @@
-# Upload your X-second 9:16 Short voiceover.mp3 + visuals.txt inside input_short/!
-# Same 2D cartoon environments & characters, framed cleanly for vertical 1080x1920!
+# CoreToGrid Vertical 9:16 Short Blueprint Directive
