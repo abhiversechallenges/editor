@@ -40,7 +40,7 @@ concurrency:
 jobs:
   plan_and_prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 60
     outputs:
       has_input: ${{ steps.check_input.outputs.has_input }}
       chunks_json: ${{ steps.chunk_plan.outputs.chunks_json }}
